@@ -3,10 +3,7 @@ import { Handle, Position, NodeProps, Node } from '@xyflow/react';
 import { cn } from '../../lib/utils';
 import { useStore } from '../../store/useStore';
 import { ArrowRight, Sparkles, Copy, Trash2 } from 'lucide-react';
-
-export interface PromptNodeData extends Record<string, unknown> {
-  prompt: string;
-}
+import { PromptNodeData } from '../../types/nodes';
 
 export const PromptNode = memo(({ id, data, selected }: NodeProps<Node<PromptNodeData>>) => {
   const [localPrompt, setLocalPrompt] = useState(data.prompt || '');

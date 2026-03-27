@@ -4,13 +4,7 @@ import { Sparkles, Lock, Loader2, Copy, Trash2 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { cn } from '../../lib/utils';
 import { enhanceNote, summarizeNote } from '../../lib/enhanceNote';
-
-export interface StickyNodeData extends Record<string, unknown> {
-  text: string;
-  fullText?: string;
-  imageUrl?: string;
-  isLocked?: boolean;
-}
+import { StickyNodeData } from '../../types/nodes';
 
 export const StickyNode = memo(({ id, data, selected }: NodeProps<Node<StickyNodeData>>) => {
   const [isEnhancing, setIsEnhancing] = useState(false);

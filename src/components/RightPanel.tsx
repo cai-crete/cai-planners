@@ -10,6 +10,10 @@ import { X, Copy, ChevronRight, Settings,
 import Markdown from 'react-markdown';
 import { summarizeNote } from '../lib/enhanceNote';
 import { generateDiscussion } from '../lib/gemini';
+import { 
+  AppNode, TurnGroupNodeData, StickyNodeData, 
+  isStickyNode, isTurnGroupNode 
+} from '../types/nodes';
 
 const IconMap: Record<string, any> = {
   Orbit, Search, GitBranch, Shield, Zap, Compass, Wind, Hash,
@@ -65,8 +69,8 @@ export const RightPanel = memo(() => {
 
   const isTurnGroup = selectedNode?.type === 'turnGroup';
 
-  const stickyFullText = !isTurnGroup
-    ? ((selectedNode?.data as any)?.fullText || (selectedNode?.data as any)?.text)
+  const stickyFullText = !isTurnGroup && selectedNode
+    ? (selectedNode.data as StickyNodeData).fullText || (selectedNode.data as StickyNodeData).text
     : undefined;
 
   useEffect(() => {
@@ -143,7 +147,7 @@ export const RightPanel = memo(() => {
   /** 그룹 노드에서 특정 전문가가 선택되었을 때 렌더링 (B&W) */
   const renderSingleExpert = () => {
     const role = parsedSelection.role as 'thesis' | 'antithesis' | 'synthesis' | 'support';
-    const turnData = (selectedNode?.data as any)[role];
+    const turnData = isTurnGroup ? (selectedNode?.data as TurnGroupNodeData)[role] : null;
     if (!turnData) return null;
     const expert = EXPERTS.find((e) => e.id === turnData.expertId);
     if (!expert) return null;
@@ -199,7 +203,7 @@ export const RightPanel = memo(() => {
 
   /** 그룹 전체 토론 로그 렌더링 (B&W Debate Log Style 복구) */
   const renderFullDebateLog = () => {
-    const data = selectedNode?.data as any;
+    const data = isTurnGroup ? (selectedNode?.data as TurnGroupNodeData) : null;
     if (!data) return null;
 
     const roles: Array<'thesis' | 'antithesis' | 'support' | 'synthesis'> = ['thesis', 'antithesis', 'support', 'synthesis'];
@@ -323,7 +327,7 @@ export const RightPanel = memo(() => {
 
   /** Final Plan 렌더링 - 8.3 & 8.4 전문 통합 출력 (간격 축소) */
   const renderFinalPlan = () => {
-    const data = selectedNode?.data as any;
+    const data = isTurnGroup ? (selectedNode?.data as TurnGroupNodeData) : null;
     if (!data) return null;
 
     return (
@@ -455,16 +459,18 @@ export const RightPanel = memo(() => {
                         ? selectedNodeIds.map(id => {
                             const node = nodes.find(n => n.id === id);
                             if (!node) return '';
-                            const text = (node.data as any).text || (node.data as any).finalOutput || '';
+                            let text = '';
+                            if (isStickyNode(node)) text = node.data.text;
+                            else if (isTurnGroupNode(node)) text = node.data.finalOutput;
                             return `[Node: ${node.id}]\n${text}`;
                           }).join('\n\n')
-                        : (selectedNode && !isTurnGroup ? (selectedNode.data as any).text : dashboardNote)
+                        : (selectedNode && !isTurnGroup && isStickyNode(selectedNode) ? selectedNode.data.text : dashboardNote)
                       }
                       readOnly={selectedNodeIds.length > 1}
                       onChange={(e) => {
                         if (selectedNodeIds.length > 1) return;
                         const val = e.target.value;
-                        if (selectedNode && !isTurnGroup) {
+                        if (selectedNode && !isTurnGroup && isStickyNode(selectedNode)) {
                           useStore.getState().updateNodeData(selectedNode.id, { text: val });
                         } else {
                           setDashboardNote(val);
@@ -541,9 +547,11 @@ export const RightPanel = memo(() => {
                         ? selectedNodeIds.map(id => {
                             const node = nodes.find(n => n.id === id);
                             if (!node) return '';
-                            return (node.data as any).text || (node.data as any).finalOutput || '';
+                            if (isStickyNode(node)) return node.data.text;
+                            if (isTurnGroupNode(node)) return node.data.finalOutput;
+                            return '';
                           }).join('\n\n')
-                        : ((selectedNode && !isTurnGroup) ? (selectedNode.data as any).text : dashboardNote);
+                        : ((selectedNode && !isTurnGroup && isStickyNode(selectedNode)) ? selectedNode.data.text : dashboardNote);
 
                       if (!currentText.trim() || isGenerating) return;
                       
@@ -597,10 +605,13 @@ export const RightPanel = memo(() => {
                     }}
                     disabled={
                       isGenerating || 
-                      (selectedNodeIds.length <= 1 && !dashboardNote.trim() && !(selectedNode && (selectedNode.data as any)?.text?.trim())) ||
+                      (selectedNodeIds.length <= 1 && !dashboardNote.trim() && !(selectedNode && isStickyNode(selectedNode) && selectedNode.data.text.trim())) ||
                       (selectedNodeIds.length > 1 && selectedNodeIds.every(id => {
                         const n = nodes.find(node => node.id === id);
-                        return !((n?.data as any)?.text?.trim() || (n?.data as any)?.finalOutput?.trim());
+                        if (!n) return true;
+                        if (isStickyNode(n)) return !n.data.text.trim();
+                        if (isTurnGroupNode(n)) return !n.data.finalOutput.trim();
+                        return true;
                       }))
                     }
                     className="w-full flex items-center justify-center py-4 bg-black text-white rounded-full font-black text-[13px] uppercase tracking-[0.25em] hover:bg-neutral-800 hover:shadow-xl transition-all disabled:bg-neutral-200 disabled:shadow-none active:scale-[0.98]"

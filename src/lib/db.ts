@@ -1,12 +1,13 @@
 import { openDB, DBSchema, IDBPDatabase } from 'idb';
 import { Node, Edge } from '@xyflow/react';
+import { AppNode } from '../types/nodes';
 
 export interface Project {
   id: string;
   name: string;
   createdAt: number;
   updatedAt: number;
-  nodes: Node[];
+  nodes: AppNode[];
   edges: Edge[];
 }
 

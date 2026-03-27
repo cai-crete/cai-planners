@@ -12,20 +12,24 @@ import {
 import { Project, saveProject, getProject, getAllProjects, deleteProject } from '../lib/db';
 import { EXPERTS } from '../lib/experts';
 import { regenerateDiscussion } from '../lib/gemini';
+import { 
+  AllNodeData, AppNode, TurnGroupNodeData, 
+  isTurnGroupNode, isPromptNode, isStickyNode 
+} from '../types/nodes';
 
 export type AppMode = 'A' | 'B' | 'C' | null;
 
 interface AppState {
   // React Flow State
-  nodes: Node[];
+  nodes: AppNode[];
   edges: Edge[];
-  onNodesChange: (changes: NodeChange[]) => void;
+  onNodesChange: (changes: NodeChange<AppNode>[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
   onConnect: (connection: Connection) => void;
-  setNodes: (nodes: Node[]) => void;
+  setNodes: (nodes: AppNode[]) => void;
   setEdges: (edges: Edge[]) => void;
-  addNode: (node: Node) => void;
-  updateNodeData: (id: string, data: any) => void;
+  addNode: (node: AppNode) => void;
+  updateNodeData: (id: string, data: Partial<AllNodeData>) => void;
 
   // Project State
   currentProjectId: string | null;
@@ -74,7 +78,7 @@ export const useStore = create<AppState>((set, get) => ({
   edges: [],
   onNodesChange: (changes) => {
     set({
-      nodes: applyNodeChanges(changes, get().nodes),
+      nodes: applyNodeChanges<AppNode>(changes, get().nodes),
     });
     get().saveCurrentProject();
   },
@@ -92,7 +96,7 @@ export const useStore = create<AppState>((set, get) => ({
       data: { protocol: 'evolution' }
     };
     set({
-      edges: addEdge(newEdge as any, get().edges),
+      edges: addEdge(newEdge as Edge, get().edges),
     });
     get().saveCurrentProject();
   },
@@ -125,7 +129,7 @@ export const useStore = create<AppState>((set, get) => ({
     set({ projects: projects.sort((a, b) => b.updatedAt - a.updatedAt) });
   },
   createNewProject: async () => {
-    const centralNode: Node = {
+    const centralNode: AppNode = {
       id: `text-${Date.now()}`,
       type: 'sticky',
       position: { x: window.innerWidth / 2 - 150, y: window.innerHeight / 2 - 100 },
@@ -165,9 +169,11 @@ export const useStore = create<AppState>((set, get) => ({
       if (project) {
         // 저장 전 함수 속성 제거 (JSON 직렬화 불가 항목 제거)
         const serializableNodes = nodes.map((n) => {
-          if (n.type !== 'turnGroup') return n;
-          const { onRegenerate, onSelectExpert, ...safeData } = n.data as any;
-          return { ...n, data: safeData };
+          if (!isTurnGroupNode(n)) return n;
+          const { thesis, antithesis, synthesis, support, ...rest } = n.data;
+          // React Flow의 내부 속성 등이 섞일 수 있으므로 필요한 데이터만 추출하거나
+          // 혹은 직렬화 방해 요소를 명확히 제거
+          return { ...n, data: { thesis, antithesis, synthesis, support, ...rest } };
         });
         await saveProject({
           ...project,
@@ -193,14 +199,8 @@ export const useStore = create<AppState>((set, get) => ({
   setRightPanelOpen: (isOpen) => set({ isRightPanelOpen: isOpen }),
   selectedNodeId: null,
   selectedNodeIds: [],
-  setSelectedNodeId: (id) => set({ 
-    selectedNodeId: id,
-    selectedNodeIds: id ? [id] : [] 
-  }),
-  setSelectedNodeIds: (ids) => set({ 
-    selectedNodeIds: ids,
-    selectedNodeId: ids.length === 1 ? ids[0] : (ids.length > 1 ? ids[ids.length - 1] : null)
-  }),
+  setSelectedNodeId: (id) => set({ selectedNodeId: id }),
+  setSelectedNodeIds: (ids) => set({ selectedNodeIds: ids }),
   toolMode: 'select',
   setToolMode: (mode) => set({ toolMode: mode }),
 
@@ -237,7 +237,7 @@ export const useStore = create<AppState>((set, get) => ({
       position: { x: newX, y: newY },
       data: { prompt },
       selected: true,
-    } as Node);
+    } as AppNode);
 
     state.setSelectedNodeId(promptNodeId);
 
@@ -265,11 +265,11 @@ export const useStore = create<AppState>((set, get) => ({
     const incomingEdge = state.edges.find((e) => e.target === promptNodeId);
     if (!incomingEdge) return;
     const parentNode = state.nodes.find((n) => n.id === incomingEdge.source);
-    if (!parentNode || parentNode.type !== 'turnGroup') return;
+    if (!parentNode || !isTurnGroupNode(parentNode)) return;
 
-    const prevFinalOutput = (parentNode.data as any).finalOutput ?? '';
-    const turn = ((parentNode.data as any).turn ?? 0) + 1;
-    const promptText = (promptNode.data as any).prompt ?? '';
+    const prevFinalOutput = parentNode.data.finalOutput ?? '';
+    const turn = (parentNode.data.turn ?? 0) + 1;
+    const promptText = isPromptNode(promptNode) ? promptNode.data.prompt : '';
 
     state.setIsGenerating(true);
     try {
@@ -299,7 +299,7 @@ export const useStore = create<AppState>((set, get) => ({
           finalOutput: reResult.finalOutput,
           transparencyReport: reResult.transparencyReport,
         },
-      } as Node);
+      } as AppNode);
 
       state.onConnect({
         source: promptNodeId,

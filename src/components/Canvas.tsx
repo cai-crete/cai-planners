@@ -18,6 +18,7 @@ import { RightPanel } from './RightPanel';
 import { TurnGroupNode } from './nodes/TurnGroupNode';
 import { PromptNode } from './nodes/PromptNode';
 import { ProtocolEdge } from './edges/ProtocolEdge';
+import { AppNode } from '../types/nodes';
 
 const nodeTypes = {
   sticky: StickyNode,
@@ -51,7 +52,7 @@ function Flow() {
     setRightPanelOpen(true);
   }, [setSelectedNodeId, setRightPanelOpen]);
 
-  const handleSelectionChange = useCallback(({ nodes }: { nodes: any[] }) => {
+  const handleSelectionChange = useCallback(({ nodes }: { nodes: AppNode[] }) => {
     const ids = nodes.map((n) => n.id);
     setSelectedNodeIds(ids);
     // 2개 이상 선택 시 우측 패널을 열어 통합 생성 유도
@@ -62,8 +63,9 @@ function Flow() {
 
   const handlePaneClick = useCallback(() => {
     setSelectedNodeId(null);
+    setSelectedNodeIds([]);
     setRightPanelOpen(false);
-  }, [setSelectedNodeId, setRightPanelOpen]);
+  }, [setSelectedNodeId, setSelectedNodeIds, setRightPanelOpen]);
 
   const handleRecenter = useCallback(() => {
     fitView({ duration: 800, padding: 0.2 });

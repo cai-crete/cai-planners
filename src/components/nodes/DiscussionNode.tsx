@@ -3,15 +3,7 @@ import { Handle, Position, NodeProps, Node } from '@xyflow/react';
 import { cn } from '../../lib/utils';
 import { EXPERTS } from '../../lib/experts';
 import { useStore } from '../../store/useStore';
-
-export type DiscussionType = 'thesis' | 'antithesis' | 'synthesis';
-
-export interface DiscussionNodeData extends Record<string, unknown> {
-  type: DiscussionType;
-  expertId: string;
-  content: string;
-  turn: number;
-}
+import { DiscussionNodeData, DiscussionType } from '../../types/nodes';
 
 export const DiscussionNode = memo(({ id, data, selected }: NodeProps<Node<DiscussionNodeData>>) => {
   const expert = EXPERTS.find((e) => e.id === data.expertId);
