@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { Handle, Position, NodeProps, Node } from '@xyflow/react';
 import { cn } from '../../lib/utils';
 import { EXPERTS } from '../../lib/experts';
+import { useStore } from '../../store/useStore';
 
 export type DiscussionType = 'thesis' | 'antithesis' | 'synthesis';
 
@@ -12,8 +13,9 @@ export interface DiscussionNodeData extends Record<string, unknown> {
   turn: number;
 }
 
-export const DiscussionNode = memo(({ data, selected }: NodeProps<Node<DiscussionNodeData>>) => {
+export const DiscussionNode = memo(({ id, data, selected }: NodeProps<Node<DiscussionNodeData>>) => {
   const expert = EXPERTS.find((e) => e.id === data.expertId);
+  const selectedNodeId = useStore((state) => state.selectedNodeId);
 
   const getTypeStyles = () => {
     switch (data.type) {
@@ -41,7 +43,7 @@ export const DiscussionNode = memo(({ data, selected }: NodeProps<Node<Discussio
       className={cn(
         'relative w-80 rounded-2xl border-2 p-5 shadow-lg transition-all',
         getTypeStyles(),
-        selected && 'ring-4 ring-black/10'
+        (selected || selectedNodeId === id) ? 'border-black ring-2 ring-black/20' : 'border-neutral-200'
       )}
     >
       <Handle type="target" position={Position.Top} className="opacity-0" />

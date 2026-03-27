@@ -43,7 +43,9 @@ interface AppState {
   toggleRightPanel: () => void;
   setRightPanelOpen: (isOpen: boolean) => void;
   selectedNodeId: string | null;
+  selectedNodeIds: string[];
   setSelectedNodeId: (id: string | null) => void;
+  setSelectedNodeIds: (ids: string[]) => void;
   toolMode: 'select' | 'pan';
   setToolMode: (mode: 'select' | 'pan') => void;
 
@@ -83,8 +85,14 @@ export const useStore = create<AppState>((set, get) => ({
     get().saveCurrentProject();
   },
   onConnect: (connection) => {
+    const newEdge = {
+      ...connection,
+      id: `e-${Date.now()}`,
+      type: 'protocolEdge',
+      data: { protocol: 'evolution' }
+    };
     set({
-      edges: addEdge(connection, get().edges),
+      edges: addEdge(newEdge as any, get().edges),
     });
     get().saveCurrentProject();
   },
@@ -184,7 +192,15 @@ export const useStore = create<AppState>((set, get) => ({
   toggleRightPanel: () => set((state) => ({ isRightPanelOpen: !state.isRightPanelOpen })),
   setRightPanelOpen: (isOpen) => set({ isRightPanelOpen: isOpen }),
   selectedNodeId: null,
-  setSelectedNodeId: (id) => set({ selectedNodeId: id }),
+  selectedNodeIds: [],
+  setSelectedNodeId: (id) => set({ 
+    selectedNodeId: id,
+    selectedNodeIds: id ? [id] : [] 
+  }),
+  setSelectedNodeIds: (ids) => set({ 
+    selectedNodeIds: ids,
+    selectedNodeId: ids.length === 1 ? ids[0] : (ids.length > 1 ? ids[ids.length - 1] : null)
+  }),
   toolMode: 'select',
   setToolMode: (mode) => set({ toolMode: mode }),
 
@@ -219,15 +235,20 @@ export const useStore = create<AppState>((set, get) => ({
       id: promptNodeId,
       type: 'promptNode',
       position: { x: newX, y: newY },
-      data: { prompt }
+      data: { prompt },
+      selected: true,
     } as Node);
+
+    state.setSelectedNodeId(promptNodeId);
 
     state.onConnect({
       source: sourceNodeId,
       target: promptNodeId,
       sourceHandle: null,
       targetHandle: null,
-    });
+      type: 'protocolEdge',
+      data: { protocol: 'dialectic' }
+    } as any);
 
     // 3. 딜레이 후 프롬프트 기반으로 실제 재-토론 발생 (UI가 먼저 렌더링될 시간 부여)
     setTimeout(() => {

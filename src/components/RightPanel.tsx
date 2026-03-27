@@ -21,6 +21,7 @@ export const RightPanel = memo(() => {
     isRightPanelOpen,
     toggleRightPanel,
     selectedNodeId,
+    selectedNodeIds,
     setSelectedNodeId,
     nodes,
     autoExpertMode,
@@ -39,6 +40,13 @@ export const RightPanel = memo(() => {
   const [dashboardNote, setDashboardNote] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isExpertsOpen, setIsExpertsOpen] = useState(false);
+  const [expandedRoles, setExpandedRoles] = useState<string[]>([]);
+
+  const toggleRoleExpansion = (role: string) => {
+    setExpandedRoles(prev => 
+      prev.includes(role) ? prev.filter(r => r !== role) : [...prev, role]
+    );
+  };
 
   // selectedNodeId가 "groupId::role" 형태인지 파싱
   const parsedSelection = useMemo(() => {
@@ -144,6 +152,7 @@ export const RightPanel = memo(() => {
     
     return (
       <div className="space-y-6 pt-2 h-full flex flex-col">
+        {/* Header with Icon & Role */}
         <div className="flex items-center gap-4 p-4 rounded-2xl border border-neutral-100 bg-neutral-50/50">
           <div className="h-12 w-12 rounded-lg bg-white border border-neutral-200 flex items-center justify-center overflow-hidden shadow-sm">
             <ExpertIcon className="h-6 w-6 text-black" />
@@ -153,9 +162,27 @@ export const RightPanel = memo(() => {
             <div className="text-[10px] font-black text-neutral-400 uppercase tracking-widest">{roleTitles[role]}</div>
           </div>
         </div>
-        
-        <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 leading-[1.8] text-[13px] text-neutral-800 font-medium whitespace-pre-wrap">
-          {sanitize(turnData.fullContent)}
+
+        {/* Content Area */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-6">
+          {/* Keywords & Summary Section */}
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-1.5">
+              {(turnData.keywords || []).map((kw: string) => (
+                <span key={kw} className="px-2 py-0.5 bg-white border border-neutral-100 rounded text-[10px] font-black text-neutral-400">
+                  #{kw}
+                </span>
+              ))}
+            </div>
+            <div className="p-4 bg-white border border-neutral-100 rounded-xl shadow-sm italic text-[13px] leading-relaxed text-neutral-900 border-l-4 border-l-black">
+              "{turnData.shortContent}"
+            </div>
+          </div>
+
+          {/* Full Content */}
+          <div className="text-[13px] leading-[1.8] text-neutral-800 font-medium whitespace-pre-wrap">
+            {sanitize(turnData.fullContent)}
+          </div>
         </div>
 
         <div className="pt-4 border-t border-neutral-100 flex gap-2">
@@ -191,25 +218,54 @@ export const RightPanel = memo(() => {
               const expert = EXPERTS.find((e) => e.id === turnData.expertId);
               if (!expert) return null;
               const ExpertIcon = IconMap[expert.iconName || 'Bot'] || Bot;
+              const isExpanded = expandedRoles.includes(role);
 
               return (
-                <div key={role} className="space-y-4 pb-8 border-b border-neutral-50 last:border-0 group transition-all">
-                  <div className="flex items-center gap-3">
-                    <div className="h-8 w-8 rounded bg-white border border-neutral-200 flex items-center justify-center overflow-hidden">
-                      <ExpertIcon className="h-4 w-4 text-black" />
+                <div key={role} className="space-y-3 pb-6 border-b border-neutral-50 last:border-0 group transition-all">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="h-7 w-7 rounded bg-white border border-neutral-200 flex items-center justify-center overflow-hidden">
+                        <ExpertIcon className="h-3.5 w-3.5 text-black" />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[11px] font-black text-black uppercase tracking-tight">
+                          {expert.name}
+                        </span>
+                        <span className="text-[9px] font-black text-neutral-300 uppercase tracking-tighter">
+                          {roleTitles[role]}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex flex-col">
-                      <span className="text-[12px] font-black text-black uppercase tracking-tight">
-                        [{expert.name} — {roleTitles[role]}]
-                      </span>
-                      <span className="text-[9px] font-black text-neutral-300 uppercase tracking-tighter">
-                        {role === 'thesis' ? 'Strategic Proposal' : role === 'antithesis' ? 'Critical Refutation' : role === 'support' ? 'Empirical Validation' : 'Integrated Synthesis'}
-                      </span>
-                    </div>
+                    <button 
+                      onClick={() => toggleRoleExpansion(role)}
+                      className="p-1 hover:bg-neutral-50 rounded transition-colors"
+                    >
+                      <ChevronDown className={cn("h-4 w-4 text-neutral-300 transition-transform", isExpanded && "rotate-180")} />
+                    </button>
                   </div>
-                  <p className="text-[13px] leading-[1.8] text-neutral-800 font-medium whitespace-pre-wrap pl-11">
-                    {sanitize(turnData.fullContent)}
-                  </p>
+
+                  {/* Keywords & Summary Preview */}
+                  <div className="pl-9.5 space-y-2">
+                    <div className="flex flex-wrap gap-1">
+                      {(turnData.keywords || []).map((kw: string) => (
+                        <span key={kw} className="text-[9px] font-black text-neutral-400">
+                          #{kw}
+                        </span>
+                      ))}
+                    </div>
+                    <p className="text-[12px] leading-relaxed text-neutral-700 font-medium italic">
+                      "{turnData.shortContent}"
+                    </p>
+                  </div>
+
+                  {/* Expandable Full Content */}
+                  {isExpanded && (
+                    <div className="pl-9.5 pt-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                      <p className="text-[12px] leading-[1.8] text-neutral-800 font-medium whitespace-pre-wrap border-l-2 border-neutral-100 pl-4 py-1">
+                        {sanitize(turnData.fullContent)}
+                      </p>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -389,14 +445,24 @@ export const RightPanel = memo(() => {
                 <div className="p-5 flex flex-col gap-2.5">
                   <div className="flex items-center justify-between px-1">
                     <span className="text-[10px] font-black uppercase tracking-[0.1em] text-neutral-400">
-                      CODE
+                      {selectedNodeIds.length > 1 ? `${selectedNodeIds.length} NODES SELECTED` : 'CODE'}
                     </span>
                     <Copy className="h-3 w-3 text-neutral-300 cursor-pointer hover:text-neutral-500 transition-colors" />
                   </div>
                   <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm relative overflow-hidden group">
                     <textarea
-                      value={selectedNode && !isTurnGroup ? (selectedNode.data as any).text : dashboardNote}
+                      value={selectedNodeIds.length > 1 
+                        ? selectedNodeIds.map(id => {
+                            const node = nodes.find(n => n.id === id);
+                            if (!node) return '';
+                            const text = (node.data as any).text || (node.data as any).finalOutput || '';
+                            return `[Node: ${node.id}]\n${text}`;
+                          }).join('\n\n')
+                        : (selectedNode && !isTurnGroup ? (selectedNode.data as any).text : dashboardNote)
+                      }
+                      readOnly={selectedNodeIds.length > 1}
                       onChange={(e) => {
+                        if (selectedNodeIds.length > 1) return;
                         const val = e.target.value;
                         if (selectedNode && !isTurnGroup) {
                           useStore.getState().updateNodeData(selectedNode.id, { text: val });
@@ -404,7 +470,10 @@ export const RightPanel = memo(() => {
                           setDashboardNote(val);
                         }
                       }}
-                      className="w-full h-36 p-4 bg-transparent text-[11px] font-medium leading-relaxed text-neutral-800 placeholder-neutral-300 resize-none outline-none custom-scrollbar"
+                      className={cn(
+                        "w-full h-36 p-4 bg-transparent text-[11px] font-medium leading-relaxed text-neutral-800 placeholder-neutral-300 resize-none outline-none custom-scrollbar",
+                        selectedNodeIds.length > 1 && "bg-neutral-50/50"
+                      )}
                       placeholder="Tell me your project, and I'll start the best expert team for you right away."
                     />
                   </div>
@@ -468,7 +537,14 @@ export const RightPanel = memo(() => {
                 <div className="p-5 pt-0 bg-[#fcfcfc]">
                   <button
                     onClick={async () => {
-                      const currentText = (selectedNode && !isTurnGroup) ? (selectedNode.data as any).text : dashboardNote;
+                      const currentText = selectedNodeIds.length > 1
+                        ? selectedNodeIds.map(id => {
+                            const node = nodes.find(n => n.id === id);
+                            if (!node) return '';
+                            return (node.data as any).text || (node.data as any).finalOutput || '';
+                          }).join('\n\n')
+                        : ((selectedNode && !isTurnGroup) ? (selectedNode.data as any).text : dashboardNote);
+
                       if (!currentText.trim() || isGenerating) return;
                       
                       setIsGenerating(true);
@@ -521,11 +597,15 @@ export const RightPanel = memo(() => {
                     }}
                     disabled={
                       isGenerating || 
-                      (!dashboardNote.trim() && !(selectedNode && (selectedNode.data as any)?.text?.trim()))
+                      (selectedNodeIds.length <= 1 && !dashboardNote.trim() && !(selectedNode && (selectedNode.data as any)?.text?.trim())) ||
+                      (selectedNodeIds.length > 1 && selectedNodeIds.every(id => {
+                        const n = nodes.find(node => node.id === id);
+                        return !((n?.data as any)?.text?.trim() || (n?.data as any)?.finalOutput?.trim());
+                      }))
                     }
                     className="w-full flex items-center justify-center py-4 bg-black text-white rounded-full font-black text-[13px] uppercase tracking-[0.25em] hover:bg-neutral-800 hover:shadow-xl transition-all disabled:bg-neutral-200 disabled:shadow-none active:scale-[0.98]"
                   >
-                    {isGenerating ? <Loader2 className="w-5 h-5 animate-spin" /> : "GENERATE"}
+                    {isGenerating ? <Loader2 className="w-5 h-5 animate-spin" /> : (selectedNodeIds.length > 1 ? "COMBINE & GENERATE" : "GENERATE")}
                   </button>
                   <div className="mt-4 text-center">
                     <span className="text-[8px] font-medium text-neutral-300 tracking-wider">

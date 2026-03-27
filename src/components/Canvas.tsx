@@ -17,12 +17,17 @@ import { LeftPanel } from './LeftPanel';
 import { RightPanel } from './RightPanel';
 import { TurnGroupNode } from './nodes/TurnGroupNode';
 import { PromptNode } from './nodes/PromptNode';
+import { ProtocolEdge } from './edges/ProtocolEdge';
 
 const nodeTypes = {
   sticky: StickyNode,
   discussion: DiscussionNode,
   turnGroup: TurnGroupNode,
   promptNode: PromptNode,
+};
+
+const edgeTypes = {
+  protocolEdge: ProtocolEdge,
 };
 
 function Flow() {
@@ -33,6 +38,7 @@ function Flow() {
     onEdgesChange,
     onConnect,
     setSelectedNodeId,
+    setSelectedNodeIds,
     setRightPanelOpen,
     isGenerating,
     toolMode,
@@ -44,6 +50,15 @@ function Flow() {
     setSelectedNodeId(node.id);
     setRightPanelOpen(true);
   }, [setSelectedNodeId, setRightPanelOpen]);
+
+  const handleSelectionChange = useCallback(({ nodes }: { nodes: any[] }) => {
+    const ids = nodes.map((n) => n.id);
+    setSelectedNodeIds(ids);
+    // 2개 이상 선택 시 우측 패널을 열어 통합 생성 유도
+    if (ids.length > 1) {
+      setRightPanelOpen(true);
+    }
+  }, [setSelectedNodeIds, setRightPanelOpen]);
 
   const handlePaneClick = useCallback(() => {
     setSelectedNodeId(null);
@@ -64,7 +79,10 @@ function Flow() {
         onConnect={onConnect}
         onNodeClick={handleNodeClick}
         onPaneClick={handlePaneClick}
+        onSelectionChange={handleSelectionChange}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        defaultEdgeOptions={{ type: 'protocolEdge' }}
         panOnScroll={false}
         selectionOnDrag={toolMode === 'select'}
         panOnDrag={toolMode === 'pan' ? true : [1, 2]}
