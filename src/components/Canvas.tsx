@@ -34,6 +34,7 @@ function Flow() {
     onEdgesChange,
     onConnect,
     setSelectedNodeId,
+    setRightPanelOpen,
     isGenerating,
     toolMode,
   } = useStore();
@@ -42,11 +43,13 @@ function Flow() {
 
   const handleNodeClick = useCallback((_, node) => {
     setSelectedNodeId(node.id);
-  }, [setSelectedNodeId]);
+    setRightPanelOpen(true);
+  }, [setSelectedNodeId, setRightPanelOpen]);
 
   const handlePaneClick = useCallback(() => {
     setSelectedNodeId(null);
-  }, [setSelectedNodeId]);
+    setRightPanelOpen(false);
+  }, [setSelectedNodeId, setRightPanelOpen]);
 
   const handleRecenter = useCallback(() => {
     fitView({ duration: 800, padding: 0.2 });

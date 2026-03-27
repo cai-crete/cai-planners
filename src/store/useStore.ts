@@ -41,6 +41,7 @@ interface AppState {
   isRightPanelOpen: boolean;
   toggleLeftPanel: () => void;
   toggleRightPanel: () => void;
+  setRightPanelOpen: (isOpen: boolean) => void;
   selectedNodeId: string | null;
   setSelectedNodeId: (id: string | null) => void;
   toolMode: 'select' | 'pan';
@@ -181,6 +182,7 @@ export const useStore = create<AppState>((set, get) => ({
   isRightPanelOpen: false,
   toggleLeftPanel: () => set((state) => ({ isLeftPanelOpen: !state.isLeftPanelOpen })),
   toggleRightPanel: () => set((state) => ({ isRightPanelOpen: !state.isRightPanelOpen })),
+  setRightPanelOpen: (isOpen) => set({ isRightPanelOpen: isOpen }),
   selectedNodeId: null,
   setSelectedNodeId: (id) => set({ selectedNodeId: id }),
   toolMode: 'select',
