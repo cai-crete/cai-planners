@@ -72,7 +72,9 @@ export const TurnGroupNode = memo(({ id, data, selected }: NodeProps<Node<TurnGr
 
   const handleExpertClick = (e: React.MouseEvent, turnData: ExpertTurnData) => {
     e.stopPropagation(); // 복구: 부모 전파를 막아 개별 뷰가 유지되게 함
-    useStore.getState().setSelectedNodeId(`${id}::${turnData.role}`);
+    const state = useStore.getState();
+    state.setSelectedNodeId(`${id}::${turnData.role}`);
+    state.setRightPanelOpen(true);
   };
 
   const renderExpert = (turnData: ExpertTurnData, theme: 'light' | 'dark') => {
@@ -130,7 +132,11 @@ export const TurnGroupNode = memo(({ id, data, selected }: NodeProps<Node<TurnGr
         'w-[960px] rounded-3xl bg-[#EBEBEB] p-5 shadow-xl relative transition-all duration-300 border border-neutral-300 flex gap-5 cursor-pointer hover:ring-4 hover:ring-blue-500/30',
         selected && 'ring-4 ring-blue-500/30'
       )}
-      onClick={() => useStore.getState().setSelectedNodeId(`${id}::finalPlan`)}
+      onClick={() => {
+        const state = useStore.getState();
+        state.setSelectedNodeId(`${id}::finalPlan`);
+        state.setRightPanelOpen(true);
+      }}
     >
       <Handle type="target" position={Position.Top} className="opacity-0" />
 

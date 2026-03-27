@@ -13,7 +13,6 @@ import '@xyflow/react/dist/style.css';
 import { useStore } from '../store/useStore';
 import { StickyNode } from './nodes/StickyNode';
 import { DiscussionNode } from './nodes/DiscussionNode';
-import { FloatingToolbar } from './FloatingToolbar';
 import { LeftPanel } from './LeftPanel';
 import { RightPanel } from './RightPanel';
 import { TurnGroupNode } from './nodes/TurnGroupNode';
@@ -48,15 +47,14 @@ function Flow() {
 
   const handlePaneClick = useCallback(() => {
     setSelectedNodeId(null);
-    setRightPanelOpen(false);
-  }, [setSelectedNodeId, setRightPanelOpen]);
+  }, [setSelectedNodeId]);
 
   const handleRecenter = useCallback(() => {
     fitView({ duration: 800, padding: 0.2 });
   }, [fitView]);
 
   return (
-    <div className="h-screen w-screen bg-neutral-50 relative overflow-hidden font-sans">
+    <div className="h-screen w-screen bg-[#fafafa] relative overflow-hidden font-sans">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -75,8 +73,8 @@ function Flow() {
         className="bg-neutral-50"
         proOptions={{ hideAttribution: true }}
       >
-        <Background variant={BackgroundVariant.Lines} gap={20} color="#e5e5e5" lineWidth={1} />
-        <Background variant={BackgroundVariant.Lines} gap={100} color="#d4d4d4" lineWidth={1} />
+        <Background variant={BackgroundVariant.Lines} gap={20} color="#f2f2f2" lineWidth={1} />
+        <Background variant={BackgroundVariant.Lines} gap={100} color="#f2f2f2" lineWidth={1} />
         
         <Controls position="top-left" showInteractive={false} className="bg-white shadow-md border-neutral-200 ml-6 mt-6" />
         <MiniMap 
@@ -98,8 +96,6 @@ function Flow() {
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
           </button>
         </Panel>
-
-        <FloatingToolbar />
       </ReactFlow>
 
       <LeftPanel />

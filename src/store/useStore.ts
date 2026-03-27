@@ -179,7 +179,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   isLeftPanelOpen: true,
-  isRightPanelOpen: false,
+  isRightPanelOpen: true,
   toggleLeftPanel: () => set((state) => ({ isLeftPanelOpen: !state.isLeftPanelOpen })),
   toggleRightPanel: () => set((state) => ({ isRightPanelOpen: !state.isRightPanelOpen })),
   setRightPanelOpen: (isOpen) => set({ isRightPanelOpen: isOpen }),

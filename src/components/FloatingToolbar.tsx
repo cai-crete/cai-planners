@@ -62,7 +62,10 @@ export const FloatingToolbar = memo(() => {
           synthesis: result.synthesis,
           support: result.support,
           finalOutput: result.finalOutput,
-          // ⚠️ 함수 속성은 저장하지 않음 — TurnGroupNode가 스토어 액션을 직접 호출
+          shortFinalOutput: result.shortFinalOutput,
+          workflowSimulationLog: result.workflowSimulationLog,
+          metacognitiveDefinition: result.metacognitiveDefinition,
+          transparencyReport: result.transparencyReport,
         },
       } as any);
 

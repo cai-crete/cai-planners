@@ -46,7 +46,25 @@ export default function App() {
   };
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-neutral-50 text-neutral-900 transition-colors dark:bg-neutral-950 dark:text-neutral-50">
+    <div className="relative h-screen w-screen overflow-hidden bg-neutral-50 text-neutral-900 transition-colors dark:bg-neutral-950 dark:text-neutral-50 font-sans">
+      
+      {/* Top Left Init Button */}
+      <div className="absolute top-8 left-8 z-50">
+        <button
+          onClick={() => createNewProject()}
+          className="text-[18px] font-black tracking-[-0.05em] uppercase hover:opacity-70 transition-opacity flex items-center gap-2 text-black"
+        >
+          CAI CANVAS
+        </button>
+      </div>
+
+      {/* Top Right Tool Bar */}
+      <div className="absolute top-8 right-8 z-50">
+        <button className="p-2 hover:bg-neutral-100 rounded-full transition-colors text-neutral-400">
+          <Sun className="h-5 w-5" />
+        </button>
+      </div>
+
       <Canvas />
     </div>
   );
