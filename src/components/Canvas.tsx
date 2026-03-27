@@ -47,14 +47,15 @@ function Flow() {
 
   const handlePaneClick = useCallback(() => {
     setSelectedNodeId(null);
-  }, [setSelectedNodeId]);
+    setRightPanelOpen(false);
+  }, [setSelectedNodeId, setRightPanelOpen]);
 
   const handleRecenter = useCallback(() => {
     fitView({ duration: 800, padding: 0.2 });
   }, [fitView]);
 
   return (
-    <div className="h-screen w-screen bg-[#fafafa] relative overflow-hidden font-sans">
+    <div className="h-screen w-screen bg-[#fcfcfc] relative overflow-hidden font-sans">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -75,27 +76,6 @@ function Flow() {
       >
         <Background variant={BackgroundVariant.Lines} gap={20} color="#f2f2f2" lineWidth={1} />
         <Background variant={BackgroundVariant.Lines} gap={100} color="#f2f2f2" lineWidth={1} />
-        
-        <Controls position="top-left" showInteractive={false} className="bg-white shadow-md border-neutral-200 ml-6 mt-6" />
-        <MiniMap 
-          nodeColor={(n) => {
-            if (n.type === 'discussion') return n.data.type === 'synthesis' ? '#000' : '#ccc';
-            return '#fff';
-          }}
-          maskColor="rgba(245, 245, 245, 0.7)"
-          className="border border-neutral-200 shadow-sm rounded-lg overflow-hidden !mb-16 !ml-6"
-          position="bottom-left"
-        />
-        
-        <Panel position="bottom-left" className="mb-4 ml-6">
-          <button
-            onClick={handleRecenter}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-md border border-neutral-200 hover:bg-neutral-50 transition-colors text-neutral-600"
-            title="Recenter Canvas"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-          </button>
-        </Panel>
       </ReactFlow>
 
       <LeftPanel />

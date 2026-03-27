@@ -180,18 +180,6 @@ export const RightPanel = memo(() => {
     return (
       <div className="flex flex-col h-full bg-white">
         <div className="flex-1 overflow-y-auto custom-scrollbar space-y-8 pr-2">
-          {/* 8.2 Workflow Simulation Log */}
-          {data.workflowSimulationLog && (
-            <div className="space-y-3">
-              <h3 className="text-[10px] font-black text-neutral-400 uppercase tracking-widest pl-1">
-                8.2 Workflow Simulation Log
-              </h3>
-              <div className="bg-neutral-50 rounded-xl p-5 border border-neutral-100 italic leading-[1.8] text-[12px] text-neutral-600 font-medium">
-                "{sanitize(data.workflowSimulationLog)}"
-              </div>
-            </div>
-          )}
-
           {/* Expert Strategic Turns */}
           <div className="space-y-6">
             <h3 className="text-[10px] font-black text-neutral-400 uppercase tracking-widest pl-1">
@@ -228,11 +216,11 @@ export const RightPanel = memo(() => {
           </div>
 
           {/* 8.3 Final Strategic Output (Integrated) */}
-          <div className="space-y-4 pt-4">
+          <div className="space-y-4 pt-2">
              <h3 className="text-[10px] font-black text-black uppercase tracking-[0.2em] flex items-center gap-2">
                <Check className="h-4 w-4 bg-black text-white rounded p-0.5" /> 8.3 Final Strategic Output
              </h3>
-              <div className="prose prose-neutral max-w-none text-black select-text whitespace-pre-wrap [&_h1]:text-[16px] [&_h1]:font-black [&_h1]:mb-6 [&_h1]:mt-8 [&_h1]:pb-4 [&_h1]:border-b-2 [&_h1]:border-black [&_h2]:text-[14px] [&_h2]:font-black [&_h2]:mt-6 [&_h2]:mb-4 [&_h2]:flex [&_h2]:items-center [&_h2]:gap-2 before:[&_h2]:content-['■'] before:[&_h2]:text-black before:[&_h2]:text-[10px] [&_h3]:text-[13px] [&_h3]:font-black [&_h3]:mt-4 [&_h3]:mb-2 [&_h3]:pl-4 [&_h3]:border-l-4 [&_h3]:border-neutral-900 [&_p]:text-[12px] [&_p]:leading-[1.8] [&_p]:mb-4 [&_p]:text-neutral-900 [&_p]:font-medium [&_strong]:font-black [&_strong]:text-black [&_strong]:underline [&_strong]:decoration-neutral-300 [&_strong]:underline-offset-4 [&_ul]:mb-4 [&_ul]:pl-5 [&_ul]:list-disc [&_ul]:marker:text-black [&_ol]:mb-4 [&_ol]:pl-5 [&_ol]:list-decimal [&_ol]:marker:font-black [&_li]:text-[12px] [&_li]:leading-[1.8] [&_li]:mb-2 [&_li]:text-neutral-900 [&_blockquote]:border-l-4 [&_blockquote]:border-black [&_blockquote]:bg-neutral-50 [&_blockquote]:px-5 [&_blockquote]:py-4 [&_blockquote]:my-6 [&_blockquote]:italic [&_blockquote]:rounded-r-lg [&_hr]:my-8 [&_hr]:border-neutral-300">
+              <div className="compact-markdown prose prose-neutral max-w-none text-black select-text whitespace-normal [&_h1]:text-[16px] [&_h1]:font-black [&_h1]:pb-2 [&_h1]:border-b-2 [&_h1]:border-black [&_h2]:text-[14px] [&_h2]:font-black [&_h2]:flex [&_h2]:items-center [&_h2]:gap-2 before:[&_h2]:content-['■'] before:[&_h2]:text-black before:[&_h2]:text-[10px] [&_h3]:text-[13px] [&_h3]:font-black [&_h3]:pl-4 [&_h3]:border-l-4 [&_h3]:border-neutral-900 [&_p]:text-[12px] [&_p]:leading-[1.8] [&_p]:text-neutral-900 [&_p]:font-medium [&_strong]:font-black [&_strong]:text-black [&_strong]:underline [&_strong]:decoration-neutral-300 [&_strong]:underline-offset-4 [&_ul]:list-disc [&_ul]:marker:text-black [&_ol]:list-decimal [&_ol]:marker:font-black [&_li]:text-[12px] [&_li]:leading-[1.8] [&_li]:text-neutral-900 [&_blockquote]:border-l-4 [&_blockquote]:border-black [&_blockquote]:bg-neutral-50 [&_blockquote]:px-5 [&_blockquote]:py-4 [&_blockquote]:italic [&_blockquote]:rounded-r-lg [&_hr]:my-8 [&_hr]:border-neutral-300">
                 <Markdown>{sanitize(data.finalOutput || '')}</Markdown>
               </div>
           </div>
@@ -286,26 +274,14 @@ export const RightPanel = memo(() => {
       <div className="flex flex-col h-full bg-white">
         <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4 pr-2">
           <div className="space-y-2">
-            <div className={[
-              'prose prose-neutral max-w-none text-black select-text whitespace-pre-wrap',
-              '[&_h1]:text-[15px] [&_h1]:font-black [&_h1]:mb-3 [&_h1]:mt-4 [&_h1]:pb-2 [&_h1]:border-b-2 [&_h1]:border-black',
-              '[&_h2]:text-[13px] [&_h2]:font-black [&_h2]:mt-4 [&_h2]:mb-2 [&_h2]:flex [&_h2]:items-center [&_h2]:gap-2 before:[&_h2]:content-["■"] before:[&_h2]:text-black before:[&_h2]:text-[10px]',
-              '[&_h3]:text-[12px] [&_h3]:font-black [&_h3]:mt-3 [&_h3]:mb-1 [&_h3]:pl-4 [&_h3]:border-l-4 [&_h3]:border-neutral-900',
-              '[&_p]:text-[12px] [&_p]:leading-[1.8] [&_p]:mb-2 [&_p]:text-neutral-900 [&_p]:font-medium',
-              '[&_strong]:font-black [&_strong]:text-black [&_strong]:underline [&_strong]:decoration-neutral-300 [&_strong]:underline-offset-4',
-              '[&_ul]:mb-2 [&_ul]:pl-5 [&_ul]:list-disc [&_ul]:marker:text-black',
-              '[&_ol]:mb-2 [&_ol]:pl-5 [&_ol]:list-decimal [&_ol]:marker:font-black',
-              '[&_li]:text-[12px] [&_li]:leading-[1.8] [&_li]:mb-1 [&_li]:text-neutral-900',
-              '[&_blockquote]:border-l-4 [&_blockquote]:border-black [&_blockquote]:bg-neutral-50 [&_blockquote]:px-4 [&_blockquote]:py-3 [&_blockquote]:my-3 [&_blockquote]:italic [&_blockquote]:rounded-r-lg',
-              '[&_hr]:my-4 [&_hr]:border-neutral-300'
-            ].join(' ')}>
+            <div className="compact-markdown prose prose-neutral max-w-none text-black select-text whitespace-normal [&_h1]:text-[15px] [&_h1]:font-black [&_h1]:pb-2 [&_h1]:border-b-2 [&_h1]:border-black [&_h2]:text-[13px] [&_h2]:font-black [&_h2]:flex [&_h2]:items-center [&_h2]:gap-2 before:[&_h2]:content-['■'] before:[&_h2]:text-black before:[&_h2]:text-[10px] [&_h3]:text-[12px] [&_h3]:font-black [&_h3]:pl-4 [&_h3]:border-l-4 [&_h3]:border-neutral-900 [&_p]:text-[12px] [&_p]:leading-[1.8] [&_p]:text-neutral-900 [&_p]:font-medium [&_strong]:font-black [&_strong]:text-black [&_strong]:underline [&_strong]:decoration-neutral-300 [&_strong]:underline-offset-4 [&_ul]:list-disc [&_ul]:marker:text-black [&_ol]:list-decimal [&_ol]:marker:font-black [&_li]:text-[12px] [&_li]:leading-[1.8] [&_li]:text-neutral-900 [&_blockquote]:border-l-4 [&_blockquote]:border-black [&_blockquote]:bg-neutral-50 [&_blockquote]:px-4 [&_blockquote]:py-3 [&_blockquote]:italic [&_blockquote]:rounded-r-lg [&_hr]:border-neutral-300">
               <Markdown>{sanitize(data.finalOutput || '').replace(/### 8\.3 Final Strategic Output/g, '')}</Markdown>
               {data.transparencyReport && (
-                <div className="mt-6 pt-4 border-t border-neutral-100">
+                <div className="mt-4 pt-3 border-t border-neutral-100">
                   <h2 className="text-[13px] font-black mt-2 mb-2 flex items-center gap-2 before:content-['■'] before:text-black before:text-[10px]">
                     Metacognitive Transparency
                   </h2>
-                  <ul className="mb-2 pl-5 list-disc marker:text-black">
+                  <ul className="pl-5 list-disc marker:text-black">
                     <li className="text-[12px] leading-[1.8] mb-1 text-neutral-900">
                       <strong>Self Healing Log:</strong> {data.transparencyReport.selfHealingLog}
                     </li>
@@ -345,30 +321,37 @@ export const RightPanel = memo(() => {
     <div
       className={cn(
         'absolute top-4 bottom-4 z-40 transition-all duration-300 ease-in-out flex items-start',
-        isRightPanelOpen ? 'right-4' : '-right-80'
+        isRightPanelOpen ? 'right-4' : 'right-[-284px]'
       )}
     >
-      {/* Toggle Button */}
+      {/* Toggle Button (Gear Icon) */}
       <button
         onClick={toggleRightPanel}
-        className="mr-4 mt-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white shadow-md border border-neutral-200 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-50 transition-colors"
+        className={cn(
+          "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-all border border-transparent",
+          isRightPanelOpen 
+            ? "mr-4 mt-2 bg-white shadow-md border-neutral-200 text-neutral-600 hover:bg-neutral-50" 
+            : "mr-3 mt-1 text-neutral-400 hover:text-black hover:bg-neutral-50"
+        )}
         title={isRightPanelOpen ? 'Close Panel' : 'Open Panel'}
       >
-        {isRightPanelOpen ? <ChevronRight className="h-5 w-5" /> : <Settings className="h-5 w-5" />}
+        {isRightPanelOpen ? <ChevronRight className="h-4 w-4" /> : <Settings className="h-5 w-5" />}
       </button>
 
       {/* Panel */}
-      <div className="w-[280px] h-full bg-white shadow-[-10px_0_30px_rgba(0,0,0,0.02)] border-l border-neutral-100 flex flex-col overflow-hidden">
+      <div className="w-[284px] h-full bg-[#fcfcfc] shadow-[-10px_0_30px_rgba(0,0,0,0.015)] border-l border-neutral-100 flex flex-col overflow-hidden font-sans">
         <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col h-full relative">
           
           {/* 1. Header (Shared) */}
-          <div className="p-4 border-b border-neutral-50 flex items-center justify-between bg-white/80 backdrop-blur-sm sticky top-0 z-10">
-            <div className="flex items-center gap-2 px-4 py-2 border border-neutral-100 rounded-full cursor-pointer hover:bg-neutral-50 transition-colors shadow-sm">
-              <span className="text-[10px] font-black uppercase tracking-widest text-neutral-800">PLANNERS</span>
+          <div className="p-4 border-b border-neutral-50 flex items-center justify-between bg-white/80 backdrop-blur-sm sticky top-0 z-10 transition-colors">
+            <div className="flex items-center gap-1.5 px-4 py-1.5 border border-neutral-100 rounded-full cursor-pointer hover:bg-neutral-50 transition-colors shadow-sm bg-white">
+              <span className="text-[11px] font-bold tracking-wider text-neutral-900">PLANNERS</span>
               <ChevronDown className="h-3 w-3 text-neutral-400" />
             </div>
             <div className="flex items-center gap-3">
-              <LayoutPanelLeft className="h-4 w-4 text-neutral-300 cursor-pointer hover:text-black transition-colors" />
+              <button className="p-2 border border-neutral-100 rounded-lg hover:bg-neutral-50 transition-colors">
+                <LayoutPanelLeft className="h-4 w-4 text-neutral-400" />
+              </button>
               {selectedNode && (
                 <button
                   onClick={() => setSelectedNodeId(null)}
@@ -386,7 +369,7 @@ export const RightPanel = memo(() => {
               /* Debate Log View (TurnGroup selected) */
               <div className="p-5 flex-1 overflow-y-auto custom-scrollbar">
                 <div className="mb-4">
-                  <h3 className="text-[10px] font-black uppercase tracking-widest text-black flex items-center gap-1.5">
+                  <h3 className="text-[10px] font-black uppercase tracking-widest text-neutral-400 flex items-center gap-1.5">
                     <MessageSquare className="h-3.5 w-3.5" />
                     {parsedSelection.role
                       ? parsedSelection.role === 'finalPlan' ? 'FINAL PLAN' : roleTitles[parsedSelection.role]
@@ -403,10 +386,13 @@ export const RightPanel = memo(() => {
               /* Note / Generation View (Dashboard or Sticky selected) */
               <div className="flex flex-col flex-1">
                 {/* Note Section */}
-                <div className="p-4 border-b border-neutral-50 flex flex-col gap-2">
-                  <span className="text-[9px] font-black uppercase tracking-[0.1em] text-neutral-400">
-                    CODE
-                  </span>
+                <div className="p-5 flex flex-col gap-2.5">
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-[10px] font-black uppercase tracking-[0.1em] text-neutral-400">
+                      CODE
+                    </span>
+                    <Copy className="h-3 w-3 text-neutral-300 cursor-pointer hover:text-neutral-500 transition-colors" />
+                  </div>
                   <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm relative overflow-hidden group">
                     <textarea
                       value={selectedNode && !isTurnGroup ? (selectedNode.data as any).text : dashboardNote}
@@ -418,63 +404,68 @@ export const RightPanel = memo(() => {
                           setDashboardNote(val);
                         }
                       }}
-                      className="w-full h-32 p-4 bg-transparent text-[12px] font-medium leading-relaxed text-neutral-800 placeholder-neutral-300 resize-none outline-none custom-scrollbar"
+                      className="w-full h-36 p-4 bg-transparent text-[11px] font-medium leading-relaxed text-neutral-800 placeholder-neutral-300 resize-none outline-none custom-scrollbar"
                       placeholder="Tell me your project, and I'll start the best expert team for you right away."
                     />
-                    <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
-                      <Copy className="h-3.5 w-3.5 text-neutral-300 hover:text-black" />
-                    </div>
                   </div>
                 </div>
 
                 {/* Experts Section */}
-                <div className="p-4 flex-1 flex flex-col min-h-0">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-[9px] font-black uppercase tracking-[0.1em] text-neutral-400">EXPERTS</span>
-                    <button
-                      onClick={() => setAutoExpertMode(!autoExpertMode)}
-                      className={cn(
-                        'text-[8px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider transition-colors border',
-                        autoExpertMode ? 'bg-black text-white border-black' : 'bg-white text-neutral-300 border-neutral-100'
-                      )}
-                    >
-                      Auto: {autoExpertMode ? 'ON' : 'OFF'}
-                    </button>
+                <div className="p-5 flex-1 flex flex-col min-h-0 pt-0">
+                  <div className="flex items-center justify-between mb-3 px-1 cursor-pointer select-none group/experts" 
+                    onClick={() => setIsExpertsOpen(!isExpertsOpen)}>
+                    <div className="flex items-center gap-1.5">
+                      <ChevronDown className={cn("h-3 w-3 text-neutral-300 transition-transform", !isExpertsOpen && "-rotate-90")} />
+                      <span className="text-[10px] font-black uppercase tracking-[0.1em] text-neutral-400 group-hover/experts:text-black transition-colors">EXPERTS</span>
+                    </div>
+                    <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                      <span className="text-[9px] font-bold text-neutral-300 tracking-wider">AUTO-ON</span>
+                      <button
+                        onClick={() => setAutoExpertMode(!autoExpertMode)}
+                        className={cn(
+                          'w-7 h-3.5 rounded-full relative transition-colors',
+                          autoExpertMode ? 'bg-black' : 'bg-neutral-200'
+                        )}
+                      >
+                        <div className={cn(
+                          "absolute top-0.5 w-2.5 h-2.5 bg-white rounded-full transition-all",
+                          autoExpertMode ? 'right-0.5' : 'left-0.5 shadow-sm'
+                        )} />
+                      </button>
+                    </div>
                   </div>
                   
-                  <div className={cn('flex flex-col gap-1.5 overflow-y-auto custom-scrollbar pr-1', autoExpertMode ? 'opacity-40 pointer-events-none' : '')}>
-                    {EXPERTS.map((expert, idx) => {
-                      const isSelected = selectedExpertIds.includes(expert.id);
-                      
-                      return (
-                        <div
-                          key={expert.id}
-                          onClick={() => toggleExpertSelection(expert.id)}
-                          className={cn(
-                            "flex items-center gap-2.5 p-2.5 rounded-xl border cursor-pointer transition-all w-full select-none",
-                            isSelected ? "border-neutral-200 bg-white shadow-sm" : "border-neutral-50 bg-neutral-50/30 hover:bg-neutral-50"
-                          )}
-                        >
-                          <div className={cn(
-                            "w-7 h-7 flex items-center justify-center rounded-full shrink-0 border border-neutral-100",
-                            isSelected ? "bg-white" : "bg-transparent text-neutral-200"
-                          )}>
-                            <div className="w-3.5 h-3.5 rounded-full border border-current opacity-20" />
+                  {isExpertsOpen && (
+                    <div className={cn('flex flex-col gap-1.5 overflow-y-auto custom-scrollbar pr-1 animate-in fade-in slide-in-from-top-1 duration-200', autoExpertMode ? 'opacity-40 pointer-events-none' : '')}>
+                      {EXPERTS.map((expert, idx) => {
+                        const isSelected = selectedExpertIds.includes(expert.id);
+                        
+                        return (
+                          <div
+                            key={expert.id}
+                            onClick={() => toggleExpertSelection(expert.id)}
+                            className={cn(
+                              "flex items-center gap-3 p-2 rounded-xl border cursor-pointer transition-all w-full select-none",
+                              isSelected ? "border-neutral-200 bg-white shadow-sm" : "border-neutral-50 bg-white/50 hover:bg-white hover:border-neutral-100"
+                            )}
+                          >
+                            <div className={cn(
+                              "w-7 h-7 flex items-center justify-center rounded-full shrink-0 border border-neutral-100 bg-transparent"
+                            )}>
+                              <div className="w-3.5 h-3.5 rounded-full border border-neutral-200" />
+                            </div>
+                            <span className="text-[10px] font-bold tracking-tight text-neutral-900 flex-1 truncate">
+                              AGENT {idx + 1} <span className="mx-0.5 opacity-20 font-normal">|</span> <span className="font-medium">[{expert.name}]</span>
+                            </span>
                           </div>
-                          <span className={cn(
-                            "text-[10px] font-bold tracking-tight flex-1 truncate",
-                            isSelected ? "text-neutral-800" : "text-neutral-400"
-                          )}>
-                            AGENT {idx + 1} <span className="mx-1 opacity-20">|</span> <span className="font-medium text-[9px]">[{expert.name}]</span>
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
 
                 {/* GENERATE Footer (Shared between Dashboard & Sticky) */}
-                <div className="p-4 border-t border-neutral-50 bg-white">
+                <div className="p-5 pt-0 bg-[#fcfcfc]">
                   <button
                     onClick={async () => {
                       const currentText = (selectedNode && !isTurnGroup) ? (selectedNode.data as any).text : dashboardNote;
@@ -536,8 +527,10 @@ export const RightPanel = memo(() => {
                   >
                     {isGenerating ? <Loader2 className="w-5 h-5 animate-spin" /> : "GENERATE"}
                   </button>
-                  <div className="text-[7.5px] text-center text-neutral-300 font-bold mt-4 tracking-[0.1em] uppercase">
-                    © CRETE CO., LTD. 2025. ALL RIGHTS RESERVED.
+                  <div className="mt-4 text-center">
+                    <span className="text-[8px] font-medium text-neutral-300 tracking-wider">
+                      © CRETE CO., LTD. 2025. ALL RIGHTS RESERVED.
+                    </span>
                   </div>
                 </div>
               </div>

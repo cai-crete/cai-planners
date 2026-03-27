@@ -3,14 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import Canvas from './components/Canvas';
 import { useStore } from './store/useStore';
-import { Sun, Moon } from 'lucide-react';
 
 export default function App() {
-  const { loadProjectsList, projects, createNewProject, toggleRightPanel } = useStore();
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const { loadProjectsList, createNewProject } = useStore();
 
   useEffect(() => {
     const init = async () => {
@@ -36,32 +34,16 @@ export default function App() {
     init();
   }, [loadProjectsList, createNewProject]);
 
-  const handleToggleDarkMode = () => {
-    setIsDarkMode(!isDarkMode);
-    if (!isDarkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  };
-
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-neutral-50 text-neutral-900 transition-colors dark:bg-neutral-950 dark:text-neutral-50 font-sans">
+    <div className="relative h-screen w-screen overflow-hidden bg-[#fcfcfc] text-neutral-900 transition-colors font-sans">
       
-      {/* Top Left Init Button */}
+      {/* Top Left Init Button (1:1 Logo Style) */}
       <div className="absolute top-8 left-8 z-50">
         <button
           onClick={() => createNewProject()}
-          className="text-[18px] font-black tracking-[-0.05em] uppercase hover:opacity-70 transition-opacity flex items-center gap-2 text-black"
+          className="text-[18px] font-black tracking-[-0.05em] hover:opacity-70 transition-opacity flex items-center gap-2 text-black"
         >
           CAI CANVAS
-        </button>
-      </div>
-
-      {/* Top Right Tool Bar */}
-      <div className="absolute top-8 right-8 z-50">
-        <button className="p-2 hover:bg-neutral-100 rounded-full transition-colors text-neutral-400">
-          <Sun className="h-5 w-5" />
         </button>
       </div>
 
