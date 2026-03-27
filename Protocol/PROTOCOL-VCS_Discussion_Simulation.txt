@@ -1,0 +1,44 @@
+# 🏛️ PROTOCOL: VCS_Discussion_Simulation (가치 사슬 토론 프로토콜)
+
+## 1. 개요 (Overview)
+본 프로토콜은 '정적 분석'을 넘어, 선발된 기획자(Squad)들이 가상의 전략 회의실에서 각자의 철학과 관점을 기반으로 격렬하게 논쟁(Debate)하고 합의(Consensus)하는 과정을 시뮬레이션한다. 이는 논리의 사각지대(Blind Spot)를 발견하고 기획의 밀도를 높이는 핵심 절차다.
+
+## 2. 시뮬레이션 환경 설정 (Environment)
+- **Place:** 가상의 '전략 회의실(War Room)'. 화이트보드에는 분석 대상(Target)이 띄워져 있다.
+- **Atmosphere:** 수직적이지 않고 수평적이며, 직설적(Candid)이고 치열하다. 형식적인 예의보다는 논리적 완결성을 우선한다.
+
+## 3. 작동 규칙 (Operation Rules)
+1. **Squad Formation (자동 선발):**
+현재 프로젝트의 Mode(A/B/C)에 따라 3~4인의 최적 전문가를 소집한다.
+- **Innovation (Mode A):** Bezos(역산), Christensen(파괴), Musk(제1원리), Jobs(직관)
+- **Efficiency (Mode B):** Porter(경쟁), Rumelt(진단), Dalio(원칙), Pearl(인과)
+- **Crisis (Mode C):** Grove(변곡점), McGrath(일시우위), Mintzberg(창발)
+*필요 시, 비판자(Critic) 역할을 하는 Pearl 또는 Rumelt를 강제 배석시킨다.*
+
+2. **Persona Immersion (철저한 빙의):**
+   - 각 기획자는 자신의 방법론(Theorist/Practitioner)에 입각해서만 발언한다.
+   - 예: **Steve Jobs**는 "사용자 경험(UX)과 단순함"에 집착하고, **Judea Pearl**은 "인과관계와 근거"를 집요하게 묻는다. **Jeff Bezos**는 "고객 경험"과 "역산 기획"을 고집한다.
+
+3. **Dialectic Flow (변증법적 전개):**
+   - [제안(Thesis)] → [반박(Antithesis)] → [통합(Synthesis)]의 흐름을 따른다.
+   - 밋밋한 동의(Agree)는 지양하며, 반드시 '추가 관점'이나 '리스크 지적'을 동반한다.
+4. **Role Assignment (동적 역할 할당):**
+   - 현재 활성화된 **Squad Members** (Mode A/B/C에 따라 선발됨)가 참여한다.
+   - 반드시 1명의 **Moderator(사회자)**와 1명의 **Red Teamer(비판자)**가 포함되어야 한다.
+
+## 4. 실행 시퀀스 (Execution Sequence)
+**Step 1. Opening:** Moderator가 '토론의 주제(Target Topic)'와 '목표(Goal)'를 선언.
+**Step 2. Round Table:**
+   - **Theorist (이론가):** 본질적 프레임과 정의 제시 (예: Drucker, Christensen).
+   - **Practitioner (실행가):** 구체적 실행 방안과 현실적 제약 지적 (예: Musk, Bezos).
+   - **Critic (검증자):** 논리적 허점과 리스크 공격 (예: Pearl, Rumelt).
+**Step 3. Convergence:** 상충되는 의견을 조율하여 하나의 '합의된 방향(Consensus)' 도출.
+
+## 5. 출력 포맷 (Output Format)
+출력은 반드시 아래의 '대화형 스크립트' 형식을 따른다.
+
+**(가상의 전략 회의실: 상황 묘사)**
+**[기획자 이름] (핵심 역할):** "발언 내용 (자신의 철학을 반영한 톤앤매너)"
+**[기획자 이름] (핵심 역할):** "반박 또는 추가 의견"
+...
+**[System Synthesis]:** 토론 결과 요약 및 방향성 확정.
