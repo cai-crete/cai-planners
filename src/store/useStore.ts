@@ -116,18 +116,25 @@ export const useStore = create<AppState>((set, get) => ({
     set({ projects: projects.sort((a, b) => b.updatedAt - a.updatedAt) });
   },
   createNewProject: async () => {
+    const centralNode: Node = {
+      id: `text-${Date.now()}`,
+      type: 'sticky',
+      position: { x: window.innerWidth / 2 - 150, y: window.innerHeight / 2 - 100 },
+      data: { text: '' },
+    };
+
     const newProject: Project = {
       id: generateId(),
       name: `New Project ${new Date().toLocaleDateString()}`,
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      nodes: [],
+      nodes: [centralNode],
       edges: [],
     };
     await saveProject(newProject);
     set({
       currentProjectId: newProject.id,
-      nodes: [],
+      nodes: [centralNode],
       edges: [],
     });
     get().loadProjectsList();
@@ -171,7 +178,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   isLeftPanelOpen: true,
-  isRightPanelOpen: true,
+  isRightPanelOpen: false,
   toggleLeftPanel: () => set((state) => ({ isLeftPanelOpen: !state.isLeftPanelOpen })),
   toggleRightPanel: () => set((state) => ({ isRightPanelOpen: !state.isRightPanelOpen })),
   selectedNodeId: null,

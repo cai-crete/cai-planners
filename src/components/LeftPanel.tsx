@@ -20,15 +20,27 @@ export const LeftPanel = memo(() => {
   };
 
   const handleAddImage = () => {
-    const url = prompt('이미지 URL을 입력하세요:', 'https://images.unsplash.com/photo-1503694978374-8a2fa686963a?w=400&q=80');
-    if (url) {
-      addNode({
-        id: `sticky-img-${Date.now()}`,
-        type: 'sticky',
-        position: { x: window.innerWidth / 2 - 100, y: window.innerHeight / 2 - 100 },
-        data: { text: '이미지 메모', imageUrl: url },
-      });
-    }
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = (e) => {
+      const target = e.target as HTMLInputElement;
+      if (target.files && target.files.length > 0) {
+        const file = target.files[0];
+        const reader = new FileReader();
+        reader.onload = (re) => {
+          const result = re.target?.result as string;
+          addNode({
+            id: `sticky-img-${Date.now()}`,
+            type: 'sticky',
+            position: { x: window.innerWidth / 2 - 100, y: window.innerHeight / 2 - 100 },
+            data: { text: '', imageUrl: result },
+          });
+        };
+        reader.readAsDataURL(file);
+      }
+    };
+    input.click();
   };
 
   return (

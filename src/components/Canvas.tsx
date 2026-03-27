@@ -63,10 +63,10 @@ function Flow() {
         onNodeClick={handleNodeClick}
         onPaneClick={handlePaneClick}
         nodeTypes={nodeTypes}
-        panOnScroll
+        panOnScroll={false}
         selectionOnDrag={toolMode === 'select'}
         panOnDrag={toolMode === 'pan' ? true : [1, 2]}
-        zoomOnScroll
+        zoomOnScroll={true}
         minZoom={0.1}
         maxZoom={4}
         className="bg-neutral-50"

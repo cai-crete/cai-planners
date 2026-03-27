@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from '@google/genai';
+import { Type } from '@google/genai';
 import { EXPERTS } from './experts';
 import {
   SYNERGY_MATRIX,
@@ -7,7 +7,19 @@ import {
   MODE_SQUAD_MAP,
 } from './synergyData';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+// API 요청을 자체 백엔드로 프록시하는 헬퍼 함수
+async function callGeminiApi(payload: any) {
+  const res = await fetch('/api/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || `Gemini API Error: ${res.status}`);
+  }
+  return await res.json();
+}
 
 // ─── 모델 엔드포인트 ───────────────────────────────────────────────────────────
 const MODEL_ANALYSIS          = 'gemini-3.1-pro-preview';
@@ -114,7 +126,7 @@ ${context}
 `.trim();
 
   try {
-    const response = await ai.models.generateContent({
+    const response = await callGeminiApi({
       model: MODEL_SELECTOR,
       contents: selectorPrompt,
       config: {
@@ -149,7 +161,7 @@ ${context}
   } catch (err) {
     console.warn('[Selector] API 실패, Fallback 사용:', err);
     try {
-      const fallbackResponse = await ai.models.generateContent({
+      const fallbackResponse = await callGeminiApi({
         model: MODEL_SELECTOR_FALLBACK,
         contents: selectorPrompt,
         config: {
@@ -421,14 +433,14 @@ ${context}
 
   let response;
   try {
-    response = await ai.models.generateContent({
+    response = await callGeminiApi({
       model: MODEL_ANALYSIS,
       contents: discussionPrompt,
       config,
     });
   } catch (primaryError) {
     console.warn(`[Discussion] ${MODEL_ANALYSIS} 실패, Fallback 사용:`, primaryError);
-    response = await ai.models.generateContent({
+    response = await callGeminiApi({
       model: MODEL_ANALYSIS_FALLBACK,
       contents: discussionPrompt,
       config,
@@ -505,7 +517,7 @@ export async function enhancePromptForRegenerate(shortPrompt: string): Promise<s
 ${shortPrompt}
 `;
   try {
-    const res = await ai.models.generateContent({
+    const res = await callGeminiApi({
       model: MODEL_ENHANCE,
       contents: prompt,
     });
@@ -513,7 +525,7 @@ ${shortPrompt}
   } catch (err) {
     console.warn(`[Enhance] ${MODEL_ENHANCE} 실패, Fallback 사용:`, err);
     try {
-      const fallbackRes = await ai.models.generateContent({
+      const fallbackRes = await callGeminiApi({
         model: MODEL_ENHANCE_FALLBACK,
         contents: prompt,
       });
