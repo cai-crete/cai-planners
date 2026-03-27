@@ -1,6 +1,15 @@
-import { GoogleGenAI, Type } from '@google/genai';
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+async function callGeminiApi(payload: any) {
+  const res = await fetch('/api/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || `Gemini API Error: ${res.status}`);
+  }
+  return await res.json();
+}
 
 export async function enhanceNote(text: string): Promise<string> {
   if (!text.trim()) return text;
@@ -18,7 +27,7 @@ ${text}
   try {
     let response;
     try {
-      response = await ai.models.generateContent({
+      response = await callGeminiApi({
         model: 'gemini-3-pro-preview',
         contents: prompt,
         config: {
@@ -27,7 +36,7 @@ ${text}
       });
     } catch (primaryError) {
       console.warn('Fallback to gemini-2.5-pro:', primaryError);
-      response = await ai.models.generateContent({
+      response = await callGeminiApi({
         model: 'gemini-2.5-pro',
         contents: prompt,
         config: {
@@ -59,7 +68,7 @@ ${fullText}
   try {
     let response;
     try {
-      response = await ai.models.generateContent({
+      response = await callGeminiApi({
         model: 'gemini-3-pro-preview',
         contents: prompt,
         config: {
@@ -68,7 +77,7 @@ ${fullText}
       });
     } catch (primaryError) {
       console.warn('Fallback to gemini-2.5-pro for summary:', primaryError);
-      response = await ai.models.generateContent({
+      response = await callGeminiApi({
         model: 'gemini-2.5-pro',
         contents: prompt,
         config: {

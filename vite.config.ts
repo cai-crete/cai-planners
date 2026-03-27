@@ -16,7 +16,7 @@ export default defineConfig(({mode}) => {
         configureServer(server) {
           const app = express();
           app.use(express.json());
-          app.post('/api/generate', async (req, res) => {
+          app.post('/generate', async (req, res) => {
             const ai = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
             try {
               const { model, contents, config } = req.body;
@@ -26,7 +26,7 @@ export default defineConfig(({mode}) => {
               res.status(500).json({ error: String(e) });
             }
           });
-          server.middlewares.use(app);
+          server.middlewares.use('/api', app);
         }
       }
     ],
