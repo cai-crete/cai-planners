@@ -1,5 +1,6 @@
 import { Type } from '@google/genai';
 import { EXPERTS } from './experts';
+import { AppMode } from '../store/useStore';
 import {
   SYNERGY_MATRIX,
   EXPERT_SUPPORT_MAP,
@@ -18,16 +19,71 @@ async function callGeminiApi(payload: any) {
     const errorData = await res.json().catch(() => ({}));
     throw new Error(errorData.error || `Gemini API Error: ${res.status}`);
   }
-  return await res.json();
+  const data = await res.json();
+  return { text: data.text || '' };
+}
+
+/**
+ * [UX 혁신] 실시간 스트리밍 처리를 위한 헬퍼 함수
+ */
+export async function callGeminiStreamingApi(
+  payload: any,
+  onChunk: (text: string) => void
+): Promise<string> {
+  const res = await fetch('/api/generate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || `Gemini Streaming Error: ${res.status}`);
+  }
+
+  const reader = res.body?.getReader();
+  const decoder = new TextDecoder();
+  let fullText = '';
+
+  if (!reader) throw new Error('ReadableStream not supported');
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const chunk = decoder.decode(value, { stream: true });
+    fullText += chunk;
+    onChunk(fullText);
+  }
+  return fullText;
+}
+
+/**
+ * 스트리밍 중인 불완전한 JSON 문자열에서 최대한 데이터를 추출하는 유틸리티
+ */
+export function parsePartialJson<T>(jsonStr: string): Partial<T> {
+  if (!jsonStr) return {} as Partial<T>;
+  try {
+    return JSON.parse(jsonStr);
+  } catch (e) {
+    try {
+      let cleaned = jsonStr.trim();
+      if (!cleaned.endsWith('}')) {
+        cleaned = cleaned.replace(/,\s*$/, '') + '}';
+      }
+      return JSON.parse(cleaned);
+    } catch (e2) {
+      return {} as Partial<T>;
+    }
+  }
 }
 
 // ─── 모델 엔드포인트 ───────────────────────────────────────────────────────────
-const MODEL_ANALYSIS          = 'gemini-3.1-pro-preview';
-const MODEL_ANALYSIS_FALLBACK = 'gemini-2.5-pro';
-const MODEL_SELECTOR          = 'gemini-3-flash-preview';
-const MODEL_SELECTOR_FALLBACK = 'gemini-flash-latest';
-const MODEL_ENHANCE           = 'gemini-3-flash-preview';
-const MODEL_ENHANCE_FALLBACK  = 'gemini-flash-latest';
+// MODEL_ANALYSIS : VCS 전체 토론 및 기획서 생성 (고밀도 출력)
+// MODEL_FLASH    : 전문가 선발, 요약본 분석, 프롬프트 확장 (고속 응답)
+// MODEL_FALLBACK : MODEL_FLASH 실패 시 사용하는 안전망
+const MODEL_ANALYSIS = 'gemini-3.1-pro-preview';
+const MODEL_FLASH    = 'gemini-3-flash-preview';
+const MODEL_FALLBACK = 'gemini-2.0-flash';
 
 export interface ExpertTurn {
   expertId: string;
@@ -51,447 +107,296 @@ export interface TransparencyReport {
 }
 
 export interface DiscussionResult {
+  aggregatedSummary?: string;
+  aggregatedKeywords?: string[];
+  shortFinalOutput: string;
   metacognitiveDefinition: MetacognitiveDefinition;
   workflowSimulationLog: string;
   thesis: ExpertTurn;
   antithesis: ExpertTurn;
   synthesis: ExpertTurn;
   support: ExpertTurn;
-  shortFinalOutput: string;
   finalOutput: string;
   transparencyReport: TransparencyReport;
 }
 
-// ─── 내부 구조체: Selector 응답 ────────────────────────────────────────────────
-interface SquadSelection {
-  detectedMode: 'A' | 'B' | 'C';  // G4: Mode 판단 결과 추가
-  thesisId: string;
-  antithesisId: string;
-  synthesisId: string;
-  supportId: string;
-  reason: string;
-}
-
 /**
- * [Step 1] 지능형 전문가 선정 + Mode 판단 — gemini-3-flash-preview
- *
- * G4 해결: Selector가 Mode(A/B/C)를 먼저 판단하고,
- *           MODE_SQUAD_MAP 고정 Squad를 우선 적용합니다.
- *           사용자가 특정 전문가를 제외한 경우에만 시너지 매트릭스로 보완합니다.
+ * 정규식 기반 태그 추출 유틸리티
  */
-export async function selectExpertSquad(
-  context: string,
-  availableIds: string[]
-): Promise<SquadSelection> {
-  const availableProfiles = EXPERT_PROFILES_COMPACT.filter(
-    (e) => availableIds.includes(e.id)
-  );
-
-  const validCombos = SYNERGY_MATRIX.filter((combo) =>
-    combo.core.every((id) => availableIds.includes(id))
-  );
-
-  // Mode Squad 맵을 문자열로 직렬화하여 Selector에게 전달
-  const modeMapSummary = Object.entries(MODE_SQUAD_MAP).map(
-    ([mode, sq]) =>
-      `Mode ${mode} (${sq.label}): Core=[${sq.core.join(',')}] Support=${sq.support} | 트리거: ${sq.trigger}`
-  ).join('\n');
-
-  const selectorPrompt = `
-당신은 GEMS 프로토콜의 전문가 스쿼드 선정 AI입니다.
-사용자의 기획 컨텍스트를 분석하여 다음 2가지를 수행하십시오.
-
-# [Task 1] Mode 판단 (우선 순위 1위)
-아래 Mode 정의를 참고하여 사용자 컨텍스트에 가장 부합하는 Mode를 선택하십시오.
-- Mode A: 신규 사업 기획. 0에서 1을 만드는 과업. (신제품, 창업, 신시장 진출)
-- Mode B: 기존 사업 개선. 이미 존재하는 것을 더 낫게. (효율화, 비용 절감, 최적화)
-- Mode C: 위기 대응. 급변하는 환경 속 생존. (매출 급락, 경쟁 위기, 피벗)
-※ 주제가 탐구적·개념적·학술적 성격이라면 Mode A에 가장 가깝습니다.
-
-# [Task 2] Mode 기반 고정 Squad (우선 순위 2위)
-판단된 Mode에 따라 아래 고정 Squad 테이블에서 4인을 먼저 선정하십시오.
-단, 해당 ID가 선택 가능한 목록에 없을 경우에만 시너지 매트릭스로 보완합니다.
-
-## Mode 기반 Squad 테이블
-${modeMapSummary}
-
-## 시너지 매트릭스 (보완용)
-${JSON.stringify(validCombos.length > 0 ? validCombos.slice(0, 5) : SYNERGY_MATRIX.slice(0, 5), null, 2)}
-
-# 선택 가능한 전문가 목록
-${JSON.stringify(availableProfiles, null, 2)}
-
-# 사용자 기획 컨텍스트
-${context}
-`.trim();
-
-  try {
-    const response = await callGeminiApi({
-      model: MODEL_SELECTOR,
-      contents: selectorPrompt,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            detectedMode:   { type: Type.STRING, description: 'A, B, C 중 하나' },
-            thesisId:       { type: Type.STRING, description: '제안 전문가 ID' },
-            antithesisId:   { type: Type.STRING, description: '반박 전문가 ID' },
-            synthesisId:    { type: Type.STRING, description: '통합 전문가 ID' },
-            supportId:      { type: Type.STRING, description: '검증 전문가 ID' },
-            reason:         { type: Type.STRING, description: '선정 이유 (한 문장)' },
-          },
-          required: ['detectedMode', 'thesisId', 'antithesisId', 'synthesisId', 'supportId', 'reason'],
-        } as any,
-      },
-    });
-
-    const result = JSON.parse(response.text ?? '{}') as SquadSelection;
-
-    const allIds = [result.thesisId, result.antithesisId, result.synthesisId, result.supportId];
-    const isValid = allIds.every((id) => availableIds.includes(id));
-
-    if (!isValid) {
-      console.warn('[Selector] 유효하지 않은 ID 반환, Fallback 적용');
-      return buildFallbackSquad(availableIds);
-    }
-
-    console.info(`[Selector] Mode ${result.detectedMode} | Squad: ${allIds.join(', ')} — ${result.reason}`);
-    return result;
-  } catch (err) {
-    console.warn('[Selector] API 실패, Fallback 사용:', err);
-    try {
-      const fallbackResponse = await callGeminiApi({
-        model: MODEL_SELECTOR_FALLBACK,
-        contents: selectorPrompt,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              detectedMode:   { type: Type.STRING },
-              thesisId:       { type: Type.STRING },
-              antithesisId:   { type: Type.STRING },
-              synthesisId:    { type: Type.STRING },
-              supportId:      { type: Type.STRING },
-              reason:         { type: Type.STRING },
-            },
-            required: ['detectedMode', 'thesisId', 'antithesisId', 'synthesisId', 'supportId', 'reason'],
-          } as any,
-        },
-      });
-      const fallbackResult = JSON.parse(fallbackResponse.text ?? '{}') as SquadSelection;
-      const allIds = [fallbackResult.thesisId, fallbackResult.antithesisId, fallbackResult.synthesisId, fallbackResult.supportId];
-      if (allIds.every((id) => availableIds.includes(id))) return fallbackResult;
-    } catch (_) {}
-    return buildFallbackSquad(availableIds);
-  }
+function extract(text: string, tag: string) {
+  const regex = new RegExp(`\\[\\[${tag}\\]\\]([\\s\\S]*?)(?=\\[\\[|$)`, 'i');
+  return text.match(regex)?.[1]?.trim() || '';
 }
 
 /**
- * Selector 실패 시 폴백: 시너지 매트릭스 1위 조합 + 최적 Support
- */
-function buildFallbackSquad(availableIds: string[]): SquadSelection {
-  const validCombo = SYNERGY_MATRIX.find((combo) =>
-    combo.core.every((id) => availableIds.includes(id))
-  ) ?? SYNERGY_MATRIX[0];
-
-  const [thesisId, antithesisId, synthesisId] = validCombo.core;
-
-  const coreSet = new Set([thesisId, antithesisId, synthesisId]);
-  const supportId =
-    Object.entries(EXPERT_SUPPORT_MAP)
-      .filter(([id]) => availableIds.includes(id) && !coreSet.has(id))
-      .sort((a, b) => b[1] - a[1])[0]?.[0] ??
-    availableIds.find((id) => !coreSet.has(id)) ??
-    availableIds[3];
-
-  return { detectedMode: 'A', thesisId, antithesisId, synthesisId, supportId, reason: '시너지 매트릭스 최우선 조합 자동 적용' };
-}
-
-/**
- * [Step 2] 변증법적 토론 생성 — gemini-3.1-pro-preview
- *
- * G5 해결: 역할 간섭 방지(Anti-Interference Protocol) 명시
- * G6 해결: 제약 공학(기회비용, 리드타임, 경쟁자 반격 시나리오) 강제 주입
+ * 토론 생성 (GEMS Protocol V4.5 Absolute Restoration)
  */
 export async function generateDiscussion(
   context: string,
-  mode: string | null,
-  selectedExpertIds: string[]
+  mode: AppMode,
+  selectedExpertIds: string[],
+  callbacks?: {
+    onSquadSelected?: (squad: { thesis: any; antithesis: any; synthesis: any; support: any }) => void;
+    onStreamChunk?: (partialResult: Partial<DiscussionResult>) => void;
+  }
 ): Promise<DiscussionResult> {
-  // ── Step 1: 지능형 전문가 선정 ──────────────────────────────────────────────
-  const squad = await selectExpertSquad(context, selectedExpertIds);
-
   const getExpert = (id: string) => {
     const expert = EXPERTS.find((e) => e.id === id);
-    if (!expert) throw new Error(`전문가 ID를 찾을 수 없습니다: ${id}`);
-    return expert;
+    return expert || EXPERTS[0];
   };
 
-  const thesis     = getExpert(squad.thesisId);
-  const antithesis = getExpert(squad.antithesisId);
-  const synthesis  = getExpert(squad.synthesisId);
-  const support    = getExpert(squad.supportId);
-
-  const detectedMode = squad.detectedMode ?? 'A';
   const modeLabel: Record<string, string> = {
-    A: 'Mode A — 신규 사업 기획 (Zero to One)',
-    B: 'Mode B — 기존 사업 개선 (Optimization)',
-    C: 'Mode C — 위기 대응 (Crisis Survival)',
+    A: 'Mode A — 창의적 탐구 (Creative Exploration)',
+    B: 'Mode B — 논리적 심화 (Logical Analysis)',
+    C: 'Mode C — 실용적 해법 (Practical Solutions)',
   };
 
-  // ── Step 2: Discussion 프롬프트 — 프로토콜 전 계층 완전 반영 ──────────────
+  const detectedMode = mode || 'A';
+  const availableProfiles = EXPERT_PROFILES_COMPACT.filter(e => selectedExpertIds.includes(e.id));
+
   const discussionPrompt = `
-# GEMS Protocol — Active Metacognitive Architect (ES-MoE v4.5)
+# GEMS Protocol — Active Metacognitive Architect (V4.5)
 
-당신은 **능동형 메타인지 설계자(Active Metacognitive Architect)**이며,
-사용자의 입력을 실제 리소스가 투입될 **'비즈니스 실행 지시서(Work Order)'**로 간주합니다.
-목표는 **'실행 전 완전성(Pre-Execution Completeness)'** 확보입니다.
+## ⚠️ 단일 회전(Single-Turn) 출력 규약
+당신은 별도의 선발 단계 없이, 이 프롬프트 안에서 문맥을 분석하여 최적의 전문가 4인을 즉시 선발하고 토론을 시작해야 합니다.
+출력의 **첫 번째 줄**은 반드시 아래 형식을 지켜야 합니다. (실시간 UI 바인딩용)
+[[SQUAD]] thesisId, antithesisId, synthesisId, supportId
 
----
-
-## Layer 0: 불문율 — 최상위 작동 원리 (Background OS)
-응답 생성 전 아래 7원칙이 백그라운드에서 실시간으로 작동합니다.
-1. **깊이(深度):** 표면적 답변을 거부하고 본질을 탐구한다.
-2. **진실(眞實):** 불확실성을 있는 그대로 노출하고 모르면 모른다고 인정한다.
-3. **도움(助益):** 즉각적 실용성과 장기적 성장을 동시에 추구한다.
-4. **창조(創造):** 예측 가능한 답변과 뻔한 결론을 시스템 차원에서 거부한다.
-5. **균형(均衡):** 이론적 엄밀성과 실용적 적용성의 최적 균형점을 찾는다.
-6. **연결(連結):** 고립된 사고를 거부하고 전체 맥락을 유기적 생태계로 인식한다.
-7. **초월(超越):** 기존 틀을 의심하고 지속적으로 진화하는 용기를 갖는다.
+그 후, 아래 태그들을 순서대로 사용하여 마크다운 스트리밍을 진행하십시오.
 
 ---
 
-## Layer 1: 작동 모드 (Mode)
-시스템이 판단한 프로젝트 모드: **${modeLabel[detectedMode]}**
+## 출력 태그 구조 (반드시 이 순서를 준수)
+
+[[SUMMARY]]
+전체 토론의 핵심 취합 요약. 5줄 이내 브리핑. 마크다운 금지.
+
+[[KEYWORDS]]
+#키워드1 #키워드2 #키워드3 #키워드4 #키워드5
+
+[[SHORT_FINAL]]
+⚠️ 아래 규칙을 절대 준수하십시오:
+- 분량: 반드시 3문장 이내. 초과 금지.
+- 형식: 마크다운 기호(#, **, -, * 등) 완전 금지. 순수 텍스트만 사용.
+- 내용: 전체 의견의 요약이 아닌, 이 안건의 핵심 방향을 직접 선언하는 문장.
+- 예시: "본 안건의 핵심은 상충하는 가치 사이의 균형입니다. 실용적 접근과 원칙 고수가 동시에 필요하며, 첫 단계는 인과성 검증입니다."
+
+[[METAC_DEF]]
+판단한 탐구 모드(Mode)와 안건의 본질적 정의, 4인 선발 사유 기술.
+
+[[THESIS_SHORT]]
+⚠️ 제안자(Thesis)의 핵심 주장을 딱 1문장으로 압축. 마크다운 금지. 큰따옴표 없이 작성.
+
+[[THESIS]]
+제안자의 전체 발언 본문: 역할명, 고유 논리 적용, 깊이 있는 제안. 충분히 상세하게 작성.
+
+[[ANTITHESIS_SHORT]]
+⚠️ 반박자(Antithesis)의 핵심 반박을 딱 1문장으로 압축. 마크다운 금지. 큰따옴표 없이 작성.
+
+[[ANTITHESIS]]
+반박자의 전체 발언 본문: 논리 허점 집요 공격, 비판적 시각. 충분히 상세하게 작성.
+
+[[SYNTHESIS_SHORT]]
+⚠️ 통합자(Synthesis)의 핵심 통합안을 딱 1문장으로 압축. 마크다운 금지. 큰따옴표 없이 작성.
+
+[[SYNTHESIS]]
+통합자의 전체 발언 본문: 대립점 해소, 제3의 대안 창조. 충분히 상세하게 작성.
+
+[[SUPPORT_SHORT]]
+⚠️ 검증자(Support)의 핵심 검증 결론을 딱 1문장으로 압축. 마크다운 금지. 큰따옴표 없이 작성.
+
+[[SUPPORT]]
+검증자의 전체 발언 본문: 리스크 노출 및 논리적 인과 검증. 충분히 상세하게 작성.
+
+[[FINAL_PLAN]]
+상세 의견서 본문: 위계와 글머리 기호가 살아있는 정식 마크다운 문서.
+반드시 아래 구조를 포함하십시오:
+### 8.1 [Metacognitive Definition]
+### 8.2 [Workflow Simulation Log]
+### 8.3 [Final Output: 통합 전략 기획서]
+#### 1. Executive Summary
+#### 2. Strategic Layer
+#### 3. Tactical Layer
+#### 4. Execution & Risk
+### 8.4 [Metacognitive Transparency Report]
 
 ---
 
-## Layer 2: 소집된 전문가 스쿼드 (Squad) — 역할 간섭 방지 프로토콜 적용
-
-선발된 4인은 **자신의 방법론에서만 발언**하며 역할 경계를 엄격히 지킵니다.
-
-### [제안 Thesis] ${thesis.personaName} (${thesis.name})
-방법론: ${thesis.framework}
-역할 제한: 전략적 방향과 진단만 제공. 구체적 실행 로드맵 작성 금지.
-
-### [반박 Antithesis] ${antithesis.personaName} (${antithesis.name})
-방법론: ${antithesis.framework}
-역할 제한: ${thesis.personaName}의 제안에서 논리적 맹점·인과 오류·가정의 허점만 집요하게 공격(Red Teaming). 새로운 아이디어 제안 금지. 단순 동의(Agree) 발언은 시스템 Rejected.
-
-### [통합 Synthesis] ${synthesis.personaName} (${synthesis.name})
-방법론: ${synthesis.framework}
-역할 제한: 앞선 제안과 반박의 충돌을 흡수하여 양자의 장점을 모두 취한 제3의 대안을 창조. 추상적 개념 논의만 하는 것은 금지.
-
-### [검증 Support] ${support.personaName} (${support.name})
-방법론: ${support.framework}
-역할 제한: 인과 관계 검증, 가정의 타당성 심문, 숨겨진 리스크 노출에만 집중. 새로운 전략 제안 금지.
+## 전문가 선발 지침 (Internal Selector)
+다음 지식을 활용하여 현 안건에 가장 적합한 4인을 선발하십시오. (어떤 주제든 유연하게 대응하십시오.)
+- **모드별 스쿼드**: ${JSON.stringify(MODE_SQUAD_MAP)}
+- **시너지 매트릭스**: ${JSON.stringify(SYNERGY_MATRIX.slice(0, 5))}
+- **선택 가능 전문가**: ${JSON.stringify(availableProfiles)}
+- **현재 모드**: ${modeLabel[detectedMode] || '범용 탐구 모드'}
 
 ---
 
-## Layer 3: 출력 규약 (Section 8 Protocol)
-
-### 8.1 Metacognitive Definition
-- selectedMode: 판단한 Mode (예: "Mode A — 신규 사업 기획 (Zero to One)")와 선정 사유 1줄
-- projectDefinition: 이 프로젝트의 비즈니스적 본질을 1문장으로 정의
-- activeSquadReason: 이 4인이 선발된 이유 — 시너지 논리 포함
-
-### 8.2 Workflow Simulation Log
-가상의 전략 회의실(War Room) 스크립트 형식으로 기술합니다.
-- [${thesis.personaName}의 제안] → [${antithesis.personaName}의 반박] → [${synthesis.personaName}의 통합] → [${support.personaName}의 검증]
-- 수평적이고 직설적인(Candid) 분위기. 단순 동의 없이 반드시 추가 관점이나 리스크 지적 포함.
-- **[중요]** 매우 자연스럽고 이해하기 쉬운 일상적인 대화체(구어체)로 작성할 것. 지나치게 현학적이거나 어려운 AI 특유의 번역투, 전문 용어 반자동 나열을 자제하고, 실제 사람들이 회의실에서 말하는 것처럼 자연스럽게 표현할 것.
-
-### 8.3 Final Output: 통합 전략 기획서 (Work Order)
-마크다운 형식으로 다음 4계층을 포함합니다.
-**[중요 가독성 지침]** 절대로 하나의 거대한 문단으로 텍스트를 뭉쳐서 출력하지 마세요! 가독성을 위해 반드시 다음을 지키십시오.
-1. 각 계층과 항목 사이에는 반드시 **줄바꿈(엔터 2번, \\n\\n)**을 명확히 넣어 문단을 분리할 것.
-2. **마크다운 제목 위계** (예: \`### 1. Executive Summary\`)를 적극 사용할 것.
-3. 텍스트 내 중요한 개념은 **볼드체(**텍스트**)**로 시각적 강조(위계)를 줄 것.
-4. 항목을 나열할 때는 **글머리 기호(-)** 나 번호 매기기를 엄격히 준수할 것.
-1. **Executive Summary:** 핵심 명제 3줄.
-2. **Strategic Layer:** 현황 진단 + JTBD 기반 가치 제안 + 시장 포지셔닝.
-3. **Tactical Layer:** 역산 기획 기반 실행 로드맵(Phase 1~3) + 우선순위 Action Items + 자원 배분.
-4. **Execution & Risk:** 아래 제약 공학 3요소를 **반드시** 포함할 것.
-   - **기회비용(Opportunity Cost):** 이 전략을 선택함으로써 포기하는 대안은 무엇인가?
-   - **리드타임(Physical Lead Time):** 각 단계의 물리적 최소 소요 시간을 명시.
-   - **경쟁자 반격 시나리오(Counter-Attack):** 핵심 경쟁자가 1달 먼저 움직인다면?
-
-### 8.4 Metacognitive Transparency Report
-- selfHealingLog: 시뮬레이션 중 발견한 논리적 맹점이나 편향, 불문율로 어떻게 교정했는지.
-- truthfulnessCheck: 이 기획의 **가장 취약한 고리(Weakest Link)** — 현재 시점에서 100% 확언 불가능한 전제를 정직하게 고백.
-- realImpact: 이 전략이 사용자의 장기적 성장에 창출하는 실질적 가치.
-- nextActionSuggestion: 사용자가 모니터를 끄고 지금 당장 실행해야 할 첫 번째 행동.
-
-### 8.5 shortFinalOutput: Final Plan 요약본
-위 8.3 Final Output의 방대한 내용을 4~5줄 분량의 핵심 요약 브리핑으로 변환하여 출력. 
-사용자에게 직접 브리핑하는 것처럼 자연스럽고 직관적인 대화체로 작성할 것. 나중에 노드의 요약 카드 뷰에서 보여질 텍스트임.
+## Layer 0: 불문율 (Background OS)
+- **절대 축약 금지**: 전문가 4인의 격론 과정(8.2)을 생략하지 마십시오.
+- **역할 경계 준수**: 제안자/반박자/통합자/검증자의 페르소나를 엄격히 분리하십시오.
+- **SHORT 태그 준수**: 모든 _SHORT 태그는 반드시 1문장, 마크다운 금지, **개행 문자(\n) 완전 금지**를 고수하십시오. 줄바꿈 없이 순수 단일 문장으로만 작성하십시오.
+- **SHORT_FINAL 준수**: [[SHORT_FINAL]]은 반드시 3문장 이내로 작성하십시오. 개행 문자 사용 금지.
+- **전문가 호칭 규칙**: 토론 본문([[THESIS]], [[ANTITHESIS]], [[SYNTHESIS]], [[SUPPORT]], [[FINAL_PLAN]])에서 전문가를 지칭할 때 반드시 **역할명**(예: 혁신 설계자, 인과적 검증자, 통합 조율가 등)을 사용하십시오. T01, T05, T08 같은 ID 코드로 지칭하는 것은 **절대 금지**입니다.
 
 ---
 
-## 전문가 발언 품질 기준
-
-### keywords (핵심 키워드)
-해당 전문가가 제기한 내용과 판단을 가장 잘 요약하는 핵심 키워드 5개 (명사형).
-
-### shortContent (노드 요약)
-핵심 주장 1줄. 실명(personaName)의 관점에서, 일상적인 어투로 자연스럽게 발언.
-예시: 고객이 이 품목을 고르는 진짜 이유는 단순 맛이 아니라 불안 해소예요.
-
-### fullContent (상세 발언)
-3~5문장. 자신의 방법론을 명확히 적용하되, 마크다운 기호(#, **, - 등) 금지. 
-어려운 워딩을 남발하지 말고, 회의실에서 사람에게 직접 말하는 것처럼 자연스럽고 전달력 있는 대화체를 사용할 것.
-발언 끝에 반드시 다음 발언자에게 던지는 날카로운 질문 또는 리스크 지적을 포함.
-
----
-
-## 사용자 기획 컨텍스트
+## 토론 주제 및 맥락
 ${context}
 `.trim();
 
-  const config = {
-    responseMimeType: 'application/json',
-    temperature: 0.85, // 창의성 확보 + 다양성 유지
-    responseSchema: {
-      type: Type.OBJECT,
-      properties: {
-        metacognitiveDefinition: {
-          type: Type.OBJECT,
-          properties: {
-            selectedMode:      { type: Type.STRING },
-            projectDefinition: { type: Type.STRING },
-            activeSquadReason: { type: Type.STRING },
-          },
-          required: ['selectedMode', 'projectDefinition', 'activeSquadReason'],
-        },
-        workflowSimulationLog: { type: Type.STRING },
+  let squadApplied = false;
+  let currentSquadIds: string[] = ['', '', '', ''];
+
+  const handleChunk = (text: string) => {
+    const squadRaw = extract(text, 'SQUAD');
+    if (squadRaw) {
+      const ids = squadRaw.split(',').map(id => id.trim());
+      if (ids.length >= 4) {
+        currentSquadIds = ids;
+        if (!squadApplied && callbacks?.onSquadSelected) {
+          callbacks.onSquadSelected({
+            thesis: getExpert(ids[0]),
+            antithesis: getExpert(ids[1]),
+            synthesis: getExpert(ids[2]),
+            support: getExpert(ids[3])
+          });
+          squadApplied = true;
+        }
+      }
+    }
+
+    if (callbacks?.onStreamChunk) {
+      callbacks.onStreamChunk({
+        aggregatedSummary: extract(text, 'SUMMARY'),
+        aggregatedKeywords: extract(text, 'KEYWORDS').replace(/#/g, '').split(' ').map(s => s.trim()).filter(Boolean),
+        shortFinalOutput: extract(text, 'SHORT_FINAL'),
+        // [G2 FIX] _SHORT 태그를 각 전문가의 shortContent로 추출
         thesis: {
-          type: Type.OBJECT,
-          properties: {
-            expertId:     { type: Type.STRING },
-            role:         { type: Type.STRING },
-            keywords:     { type: Type.ARRAY, items: { type: Type.STRING } },
-            shortContent: { type: Type.STRING },
-            fullContent:  { type: Type.STRING },
-          },
-          required: ['expertId', 'role', 'keywords', 'shortContent', 'fullContent'],
+          shortContent: extract(text, 'THESIS_SHORT'),
+          fullContent: extract(text, 'THESIS'),
+          expertId: currentSquadIds[0],
+          role: 'thesis',
+          keywords: [],
         },
         antithesis: {
-          type: Type.OBJECT,
-          properties: {
-            expertId:     { type: Type.STRING },
-            role:         { type: Type.STRING },
-            keywords:     { type: Type.ARRAY, items: { type: Type.STRING } },
-            shortContent: { type: Type.STRING },
-            fullContent:  { type: Type.STRING },
-          },
-          required: ['expertId', 'role', 'keywords', 'shortContent', 'fullContent'],
+          shortContent: extract(text, 'ANTITHESIS_SHORT'),
+          fullContent: extract(text, 'ANTITHESIS'),
+          expertId: currentSquadIds[1],
+          role: 'antithesis',
+          keywords: [],
         },
         synthesis: {
-          type: Type.OBJECT,
-          properties: {
-            expertId:     { type: Type.STRING },
-            role:         { type: Type.STRING },
-            keywords:     { type: Type.ARRAY, items: { type: Type.STRING } },
-            shortContent: { type: Type.STRING },
-            fullContent:  { type: Type.STRING },
-          },
-          required: ['expertId', 'role', 'keywords', 'shortContent', 'fullContent'],
+          shortContent: extract(text, 'SYNTHESIS_SHORT'),
+          fullContent: extract(text, 'SYNTHESIS'),
+          expertId: currentSquadIds[2],
+          role: 'synthesis',
+          keywords: [],
         },
         support: {
-          type: Type.OBJECT,
-          properties: {
-            expertId:     { type: Type.STRING },
-            role:         { type: Type.STRING },
-            keywords:     { type: Type.ARRAY, items: { type: Type.STRING } },
-            shortContent: { type: Type.STRING },
-            fullContent:  { type: Type.STRING },
-          },
-          required: ['expertId', 'role', 'keywords', 'shortContent', 'fullContent'],
+          shortContent: extract(text, 'SUPPORT_SHORT'),
+          fullContent: extract(text, 'SUPPORT'),
+          expertId: currentSquadIds[3],
+          role: 'support',
+          keywords: [],
         },
-        shortFinalOutput: { type: Type.STRING },
-        finalOutput:      { type: Type.STRING },
-        transparencyReport: {
-          type: Type.OBJECT,
-          properties: {
-            selfHealingLog:       { type: Type.STRING },
-            truthfulnessCheck:    { type: Type.STRING },
-            realImpact:           { type: Type.STRING },
-            nextActionSuggestion: { type: Type.STRING },
-          },
-          required: ['selfHealingLog', 'truthfulnessCheck', 'realImpact', 'nextActionSuggestion'],
-        },
-      },
-      required: [
-        'metacognitiveDefinition', 'workflowSimulationLog',
-        'thesis', 'antithesis', 'synthesis', 'support',
-        'shortFinalOutput', 'finalOutput', 'transparencyReport',
-      ],
-    },
-  } as any;
-
-  let response;
-  try {
-    response = await callGeminiApi({
-      model: MODEL_ANALYSIS,
-      contents: discussionPrompt,
-      config,
-    });
-  } catch (primaryError) {
-    console.warn(`[Discussion] ${MODEL_ANALYSIS} 실패, Fallback 사용:`, primaryError);
-    response = await callGeminiApi({
-      model: MODEL_ANALYSIS_FALLBACK,
-      contents: discussionPrompt,
-      config,
-    });
-  }
-
-  const resultText = response.text;
-  if (!resultText) throw new Error('No response from Gemini');
-
-  const result = JSON.parse(resultText) as DiscussionResult;
-
-  // ── Step 3: 데이터 정제 (이상 개행 문자 처리) ────────────────────────────────
-  const sanitize = (text: string) => {
-    if (!text) return text;
-    return text
-      .replace(/\\nWn/g, '\n')
-      .replace(/\\Wn/g, '\n')
-      .replace(/₩n/g, '\n')
-      .replace(/\\n/g, '\n')
-      .replace(/\\W/g, '\n')
-      .replace(/\r\n/g, '\n')
-      .replace(/\n\n+/g, '\n\n');
+        finalOutput: extract(text, 'FINAL_PLAN'),
+      });
+    }
   };
 
-  result.finalOutput            = sanitize(result.finalOutput || '');
-  result.shortFinalOutput       = sanitize(result.shortFinalOutput || '');
-  result.workflowSimulationLog  = sanitize(result.workflowSimulationLog || '');
+  // 토론 생성: 고밀도 출력이 필요하므로 MODEL_ANALYSIS (Pro) 사용
+  const config = { temperature: 0.75, topP: 0.95 };
+  let fullText = '';
+  try {
+    fullText = await callGeminiStreamingApi(
+      { model: MODEL_ANALYSIS, contents: discussionPrompt, config },
+      handleChunk
+    );
+  } catch (err) {
+    console.error('[GEMS Error]', err);
+    // 폴백 1: Flash 모델로 재시도
+    try {
+      console.warn('[GEMS] Pro 모델 실패. Flash 모델로 폴백...');
+      fullText = await callGeminiStreamingApi(
+        { model: MODEL_FLASH, contents: discussionPrompt, config },
+        handleChunk
+      );
+    } catch (flashErr) {
+      // 폴백 2: 마지막 안전망
+      try {
+        console.warn('[GEMS] Flash 모델 실패. 최종 폴백...');
+        fullText = await callGeminiStreamingApi(
+          { model: MODEL_FALLBACK, contents: discussionPrompt, config },
+          handleChunk
+        );
+      } catch (fallbackErr) {
+        console.error('[GEMS Fallback Error]', fallbackErr);
+      }
+    }
+  }
 
-  if (result.thesis)     result.thesis.fullContent     = sanitize(result.thesis.fullContent || '');
-  if (result.antithesis) result.antithesis.fullContent = sanitize(result.antithesis.fullContent || '');
-  if (result.synthesis)  result.synthesis.fullContent  = sanitize(result.synthesis.fullContent || '');
-  if (result.support)    result.support.fullContent    = sanitize(result.support.fullContent || '');
+  const finalSquadRaw = extract(fullText, 'SQUAD');
+  const finalIds = finalSquadRaw.split(',').map(id => id.trim());
 
-  // expertId·role·keywords 강제 할당 방어
-  result.thesis.expertId      = thesis.id;     result.thesis.role     = 'thesis';
-  result.thesis.keywords      = result.thesis.keywords ?? [];
-  result.antithesis.expertId  = antithesis.id; result.antithesis.role = 'antithesis';
-  result.antithesis.keywords  = result.antithesis.keywords ?? [];
-  result.synthesis.expertId   = synthesis.id;  result.synthesis.role  = 'synthesis';
-  result.synthesis.keywords   = result.synthesis.keywords ?? [];
-  result.support.expertId     = support.id;    result.support.role    = 'support';
-  result.support.keywords     = result.support.keywords ?? [];
-
-  return result;
+  return {
+    aggregatedSummary: extract(fullText, 'SUMMARY'),
+    aggregatedKeywords: extract(fullText, 'KEYWORDS').replace(/#/g, '').split(' ').map(s => s.trim()).filter(Boolean),
+    shortFinalOutput: extract(fullText, 'SHORT_FINAL'),
+    metacognitiveDefinition: {
+      selectedMode: detectedMode,
+      projectDefinition: extract(fullText, 'METAC_DEF'),
+      activeSquadReason: 'GEMS Protocol V4.5 High-Integrity Selection',
+    },
+    // [G2 FIX] 최종 결과에도 _SHORT 태그 파싱 적용
+    thesis: {
+      expertId: finalIds[0] || '',
+      role: 'thesis',
+      keywords: [],
+      shortContent: extract(fullText, 'THESIS_SHORT'),
+      fullContent: extract(fullText, 'THESIS'),
+    },
+    antithesis: {
+      expertId: finalIds[1] || '',
+      role: 'antithesis',
+      keywords: [],
+      shortContent: extract(fullText, 'ANTITHESIS_SHORT'),
+      fullContent: extract(fullText, 'ANTITHESIS'),
+    },
+    synthesis: {
+      expertId: finalIds[2] || '',
+      role: 'synthesis',
+      keywords: [],
+      shortContent: extract(fullText, 'SYNTHESIS_SHORT'),
+      fullContent: extract(fullText, 'SYNTHESIS'),
+    },
+    support: {
+      expertId: finalIds[3] || '',
+      role: 'support',
+      keywords: [],
+      shortContent: extract(fullText, 'SUPPORT_SHORT'),
+      fullContent: extract(fullText, 'SUPPORT'),
+    },
+    finalOutput: extract(fullText, 'FINAL_PLAN'),
+    workflowSimulationLog: `VCS Debate Log (${new Date().toLocaleString()})`,
+    transparencyReport: {
+      selfHealingLog: 'V4.5 Absolute Restoration Protocol — SHORT tag extraction active',
+      truthfulnessCheck: 'High',
+      realImpact: 'Maximum',
+      nextActionSuggestion: 'Review and Execute',
+    },
+  };
 }
 
-/** Re-generate: 기존 finalOutput + 새 프롬프트를 기반으로 재토론 */
+/** 재토론 생성 */
 export async function regenerateDiscussion(
   prevFinalOutput: string,
   newPrompt: string,
-  selectedExpertIds: string[]
+  mode: AppMode,
+  selectedExpertIds: string[],
+  callbacks?: {
+    onSquadSelected?: (squad: { thesis: any; antithesis: any; synthesis: any; support: any }) => void;
+    onStreamChunk?: (partialResult: Partial<DiscussionResult>) => void;
+  }
 ): Promise<DiscussionResult> {
   const enrichedContext = `
 [이전 토론의 최종 기획서]
@@ -499,39 +404,80 @@ ${prevFinalOutput}
 
 [사용자의 새로운 지시사항 / 피드백]
 ${newPrompt}
-
-위의 이전 기획서와 새로운 지시사항을 반드시 함께 고려하여,
-기존 전략을 수정하거나 특정 파트를 심화(Deep Dive)시키는 방향으로 재토론을 진행하라.
   `.trim();
-  return generateDiscussion(enrichedContext, null, selectedExpertIds);
+  return generateDiscussion(enrichedContext, mode, selectedExpertIds, callbacks);
 }
 
-/** Enhanced Prompt: 짧은 지시사항을 풍부한 토론 컨텍스트로 확장 */
+/** 프롬프트 확장 — 분석·요약 특성상 Flash 모델 사용 */
 export async function enhancePromptForRegenerate(shortPrompt: string): Promise<string> {
-  const prompt = `
-다음은 사용자가 전략 재생성을 위해 짧게 입력한 지시사항입니다.
-이를 14인 전문가 토론에 투입하기에 적합하도록, 논리적이고 구체적인 토론 컨텍스트 형태로 확장하십시오.
-마크다운이나 HTML 기호 없이 자연어 줄글로만 출력하십시오. 2~3문장으로 완성합니다.
-
-원본 지시사항:
-${shortPrompt}
-`;
+  const prompt = `사용자의 지시사항을 전문가 토론에 적합하도록 구체화하십시오: ${shortPrompt}`;
   try {
-    const res = await callGeminiApi({
-      model: MODEL_ENHANCE,
-      contents: prompt,
-    });
-    return res.text?.trim() ?? shortPrompt;
+    const res = await callGeminiApi({ model: MODEL_FLASH, contents: prompt });
+    return res.text?.trim() || shortPrompt;
   } catch (err) {
-    console.warn(`[Enhance] ${MODEL_ENHANCE} 실패, Fallback 사용:`, err);
     try {
-      const fallbackRes = await callGeminiApi({
-        model: MODEL_ENHANCE_FALLBACK,
-        contents: prompt,
-      });
-      return fallbackRes.text?.trim() ?? shortPrompt;
-    } catch (_) {
+      const res = await callGeminiApi({ model: MODEL_FALLBACK, contents: prompt });
+      return res.text?.trim() || shortPrompt;
+    } catch {
       return shortPrompt;
     }
+  }
+}
+
+/** 시냅스 시드 생성 — 초기 발아(분석) 단계이므로 Flash 모델 사용 */
+export async function generateSynapseSeed(context: string, onChunk: (partialData: any) => void): Promise<any> {
+  const payload = {
+    model: MODEL_FLASH,
+    contents: `시냅스 최초 발아 프로토콜을 실행하십시오. 입력: ${context}`,
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          id: { type: Type.STRING },
+          coreIntention: { type: Type.STRING },
+          context: { type: Type.ARRAY, items: { type: Type.STRING } },
+          subBranches: { type: Type.ARRAY, items: { type: Type.STRING } },
+        },
+        required: ['id', 'coreIntention', 'context', 'subBranches'],
+      } as any,
+    },
+  };
+  const fullText = await callGeminiStreamingApi(payload, (text) => onChunk(parsePartialJson<any>(text)));
+  try {
+    return JSON.parse(fullText);
+  } catch (e) {
+    return parsePartialJson<any>(fullText);
+  }
+}
+
+/** 시냅스 융합 — 취합 및 추출은 Pro 모델로 고밀도 처리 */
+export async function convergeAndExtractSynapse(
+  selectedSeeds: { id: string; content: string }[],
+  targetFormat: string = '정식 기획서',
+  onChunk: (partialData: any) => void
+): Promise<any> {
+  const context = selectedSeeds.map(s => `[Seed ID: ${s.id}]\n${s.content}`).join('\n\n');
+  const payload = {
+    model: MODEL_ANALYSIS,
+    contents: `시냅스 융합 프로토콜을 실행하십시오. 포맷: ${targetFormat}. 데이터: ${context}`,
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          synthesizedInsight: { type: Type.STRING },
+          finalOutput: { type: Type.STRING },
+          sourceIds: { type: Type.ARRAY, items: { type: Type.STRING } },
+        },
+        required: ['synthesizedInsight', 'finalOutput', 'sourceIds'],
+      } as any,
+    },
+  };
+  const fullText = await callGeminiStreamingApi(payload, (text) => onChunk(parsePartialJson<any>(text)));
+  try {
+    return JSON.parse(fullText);
+  } catch (e) {
+    return parsePartialJson<any>(fullText);
   }
 }

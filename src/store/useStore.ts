@@ -11,21 +11,31 @@ import {
 } from '@xyflow/react';
 import { Project, saveProject, getProject, getAllProjects, deleteProject } from '../lib/db';
 import { EXPERTS } from '../lib/experts';
-import { regenerateDiscussion } from '../lib/gemini';
+import { regenerateDiscussion, generateDiscussion } from '../lib/gemini';
 import { 
-  AllNodeData, AppNode, TurnGroupNodeData, 
-  isTurnGroupNode, isPromptNode, isStickyNode,
-  PromptVersion 
+  AppNode, 
+  AllNodeData,
+  StickyNodeData, 
+  TurnGroupNodeData, 
+  PromptNodeData,
+  PromptVersion,
+  isStickyNode, 
+  isTurnGroupNode, 
+  isPromptNode,
+  getPromptNodeData
 } from '../types/nodes';
 
 export const GEMS_PALETTE = [
-  { main: '#EF4444', pale: '#FEF2F2' }, // Red
-  { main: '#3B82F6', pale: '#EFF6FF' }, // Blue
-  { main: '#8B5CF6', pale: '#F5F3FF' }, // Purple
+  { main: '#3B82F6', pale: '#EFF6FF' }, // Blue (V2+)
   { main: '#10B981', pale: '#ECFDF5' }, // Green
+  { main: '#8B5CF6', pale: '#F5F3FF' }, // Purple
   { main: '#F59E0B', pale: '#FFFBEB' }, // Orange
+  { main: '#EF4444', pale: '#FEF2F2' }, // Red (Legacy)
   { main: '#EC4899', pale: '#FDF2F8' }, // Pink
 ];
+
+export const INITIAL_GRAY = '#64748B';
+export const LEGACY_RED   = '#EF4444';
 
 export type AppMode = 'A' | 'B' | 'C' | null;
 
@@ -56,6 +66,8 @@ interface AppState {
   toggleLeftPanel: () => void;
   toggleRightPanel: () => void;
   setRightPanelOpen: (isOpen: boolean) => void;
+  rightPanelWidth: number;
+  setRightPanelWidth: (width: number) => void;
   selectedNodeId: string | null;
   selectedNodeIds: string[];
   setSelectedNodeId: (id: string | null) => void;
@@ -78,10 +90,13 @@ interface AppState {
   // ─── 중앙 관리소: Re-generate 전용 액션 ───
   createPromptAndRegenerate: (sourceNodeId: string, prompt: string) => Promise<void>;
   reGenerateFromPrompt: (promptNodeId: string) => Promise<void>;
+  combineAndGenerateVCS: (sourceIds: string[], customPrompt?: string) => Promise<void>;
+  updatePromptTextWithBranching: (nodeId: string, versionId: string, newText: string) => void;
   deleteNode: (id: string) => void;
+  deleteNodes: (ids: string[]) => void;
 }
 
-const generateId = () => Math.random().toString(36).substring(2, 9);
+export const generateId = () => Math.random().toString(36).substring(2, 9);
 
 export const useStore = create<AppState>((set, get) => ({
   nodes: [],
@@ -99,11 +114,21 @@ export const useStore = create<AppState>((set, get) => ({
     get().saveCurrentProject();
   },
   onConnect: (connection) => {
+    const state = get();
+    const sourceNode = state.nodes.find(n => n.id === connection.source);
+    let edgeColor = null;
+
+    if (sourceNode && isPromptNode(sourceNode)) {
+      const pData = getPromptNodeData(sourceNode.data);
+      const currentVer = pData.versions.find(v => v.id === pData.currentVersionId);
+      edgeColor = currentVer?.color || INITIAL_GRAY;
+    }
+
     const newEdge = {
       ...connection,
-      id: `e-${Date.now()}`,
+      id: `e-${generateId()}`,
       type: 'protocolEdge',
-      data: { protocol: 'evolution' }
+      data: { protocol: 'evolution', color: edgeColor }
     };
     set({
       edges: addEdge(newEdge as Edge, get().edges),
@@ -124,11 +149,133 @@ export const useStore = create<AppState>((set, get) => ({
     });
     get().saveCurrentProject();
   },
+  updatePromptTextWithBranching: (nodeId, versionId, newText) => {
+    const state = get();
+    const node = state.nodes.find(n => n.id === nodeId);
+    if (!node || !isPromptNode(node)) return;
+
+    const pData = getPromptNodeData(node.data);
+    const versions = pData.versions;
+    const currentVer = versions.find(v => v.id === versionId) || versions[0];
+
+    // 현재 버전이 이미 결과물을 생성했는지 체크 (Edge 존재 여부)
+    const hasExistingResult = state.edges.some(e => 
+      e.source === nodeId && ((e.data as any)?.color === currentVer.color || (!(e.data as any)?.color && currentVer.id === 'v1'))
+    );
+
+    // 이미 결과가 있는 탭을 수정하려고 하면 즉시 분기 (최대 6개)
+    if (hasExistingResult && versions.length < 6) {
+      const nextIndex = versions.length; // 현재 1개면 nextIndex=1
+      const newVerId = `v-${Date.now()}`;
+      
+      // [상태 전이] V1에서 V2로 넘어가는 첫 분기 시점
+      let updatedVersions = [...versions];
+      if (versions.length === 1 && versions[0].id === 'v1') {
+        // 1. 기존 V1 탭을 Red로 전환
+        updatedVersions[0] = { ...updatedVersions[0], color: LEGACY_RED };
+        
+        // 2. 기존 V1과 연결된 모든 엣지/노드 Red로 전환
+        const v1Edges = state.edges.filter(e => e.source === nodeId && (!(e.data as any)?.color || (e.data as any)?.color === INITIAL_GRAY));
+        v1Edges.forEach(e => {
+          // 엣지 업데이트
+          set(s => ({
+            edges: s.edges.map(ed => ed.id === e.id ? { ...ed, data: { ...ed.data, color: LEGACY_RED } } : ed)
+          }));
+          // 연결된 노드 업데이트
+          set(s => ({
+            nodes: s.nodes.map(n => n.id === e.target ? { ...n, data: { ...n.data, versionColor: LEGACY_RED } } : n)
+          }));
+        });
+      }
+
+      const newVersion: PromptVersion = {
+        id: newVerId,
+        text: newText,
+        color: GEMS_PALETTE[nextIndex - 1]?.main || GEMS_PALETTE[0].main, // V2는 Palette[0] (Blue)
+        timestamp: Date.now()
+      };
+
+      state.updateNodeData(nodeId, {
+        versions: [...updatedVersions, newVersion],
+        currentVersionId: newVerId
+      });
+    } else {
+      // 결과가 없거나 분기가 불가능하면 해당 탭의 텍스트만 업데이트
+      const updatedVersions = versions.map(v => 
+        v.id === versionId ? { ...v, text: newText } : v
+      );
+      state.updateNodeData(nodeId, {
+        versions: updatedVersions,
+        currentVersionId: versionId
+      });
+    }
+  },
   deleteNode: (id) => {
+    const state = get();
+    const deletedNode = state.nodes.find(n => n.id === id);
+    
+    // 만약 turnGroup을 삭제하는 것이라면, 부모 프롬프트의 매칭된 버전도 삭제
+    if (deletedNode && isTurnGroupNode(deletedNode)) {
+      const color = deletedNode.data.versionColor;
+      if (color) {
+        const edge = state.edges.find(e => e.target === id);
+        if (edge) {
+          const parentPrompt = state.nodes.find(n => n.id === edge.source);
+          if (parentPrompt && isPromptNode(parentPrompt)) {
+            const pData = getPromptNodeData(parentPrompt.data);
+            const updated = (pData.versions || []).filter(v => v.color !== color);
+            state.updateNodeData(parentPrompt.id, { 
+              versions: updated,
+              currentVersionId: updated[0]?.id || 'v1'
+            });
+          }
+        }
+      }
+    }
+
     set({
       nodes: get().nodes.filter((n) => n.id !== id),
       edges: get().edges.filter((e) => e.source !== id && e.target !== id),
     });
+    get().saveCurrentProject();
+  },
+  deleteNodes: (ids) => {
+    const state = get();
+    const idSet = new Set(ids);
+    
+    // 1. 삭제할 노드들로부터 영향을 받는 프롬프트 노드들의 업데이트 맵 생성 (Batching)
+    const promptUpdates: Record<string, Partial<PromptNodeData>> = {};
+
+    ids.forEach(id => {
+      const deletedNode = state.nodes.find(n => n.id === id);
+      if (deletedNode && isTurnGroupNode(deletedNode)) {
+        const color = deletedNode.data.versionColor;
+        if (color) {
+          const edge = state.edges.find(e => e.target === id);
+          if (edge) {
+            const parentPrompt = state.nodes.find(n => n.id === edge.source);
+            if (parentPrompt && isPromptNode(parentPrompt)) {
+              const pData = getPromptNodeData(parentPrompt.data);
+              const currentVersions = promptUpdates[parentPrompt.id]?.versions || pData.versions;
+              const updated = currentVersions.filter(v => v.color !== color);
+              promptUpdates[parentPrompt.id] = {
+                versions: updated,
+                currentVersionId: updated[0]?.id || 'v1'
+              };
+            }
+          }
+        }
+      }
+    });
+
+    // 2. 한 번의 set 호출로 노드 필터링 및 데이터 업데이트 수행
+    set({
+      nodes: state.nodes
+        .filter((n) => !idSet.has(n.id))
+        .map((n) => (promptUpdates[n.id] ? { ...n, data: { ...n.data, ...promptUpdates[n.id] } } : n)),
+      edges: state.edges.filter((e) => !idSet.has(e.source) && !idSet.has(e.target)),
+    });
+    
     get().saveCurrentProject();
   },
 
@@ -215,6 +362,11 @@ export const useStore = create<AppState>((set, get) => ({
   toggleLeftPanel: () => set((state) => ({ isLeftPanelOpen: !state.isLeftPanelOpen })),
   toggleRightPanel: () => set((state) => ({ isRightPanelOpen: !state.isRightPanelOpen })),
   setRightPanelOpen: (isOpen) => set({ isRightPanelOpen: isOpen }),
+  rightPanelWidth: Number(localStorage.getItem('rightPanelWidth')) || 400,
+  setRightPanelWidth: (width) => {
+    set({ rightPanelWidth: width });
+    localStorage.setItem('rightPanelWidth', width.toString());
+  },
   selectedNodeId: null,
   selectedNodeIds: [],
   setSelectedNodeId: (id) => set({ selectedNodeId: id }),
@@ -245,7 +397,7 @@ export const useStore = create<AppState>((set, get) => ({
     if (!sourceNode) return;
 
     // 1. Prompt Node 생성 (임시 입력값을 노드화)
-    const promptNodeId = `node-prompt-${Date.now()}`;
+    const promptNodeId = `node-prompt-${generateId()}`;
     const newX = sourceNode.position.x + 950;
     const newY = sourceNode.position.y;
 
@@ -257,7 +409,7 @@ export const useStore = create<AppState>((set, get) => ({
         versions: [{
           id: 'v1',
           text: prompt,
-          color: GEMS_PALETTE[0].main,
+          color: INITIAL_GRAY, // V1은 회색으로 시작
           timestamp: Date.now()
         }],
         currentVersionId: 'v1'
@@ -287,19 +439,49 @@ export const useStore = create<AppState>((set, get) => ({
     const promptNode = state.nodes.find((n) => n.id === promptNodeId);
     if (!promptNode || !isPromptNode(promptNode)) return;
 
-    // 1. 현재 선택된 탭 정보 가져오기 혹은 새로운 탭 생성 처리 (레거시 대응)
-    const nodeData = promptNode.data;
-    const versions = nodeData.versions || [{
-      id: 'v1',
-      text: (nodeData as any).prompt || '',
-      color: GEMS_PALETTE[0].main,
-      timestamp: Date.now()
-    }];
-    const currentVersionId = nodeData.currentVersionId || 'v1';
+    const nodeData = getPromptNodeData(promptNode.data);
+    const versions = nodeData.versions;
+    const currentVersionId = nodeData.currentVersionId;
     const currentVer = versions.find(v => v.id === currentVersionId) || versions[0];
-    if (!currentVer) return;
+    
+    // 현재 탭의 텍스트가 이미 결과물을 낸 텍스트와 다를 경우 분기 생성 여부 판단
+    const existingEdges = state.edges.filter(e => e.source === promptNodeId && (e.data as any)?.color === currentVer.color);
+    const hasExistingResult = existingEdges.length > 0;
 
-    // 2. 선행 그룹 노드(부모) 탐색
+    let targetVersion = currentVer;
+
+    // 만약 이미 결과가 있는 상태에서 다시 'Generate'를 누르고, 남은 슬롯이 있다면 -> 새로운 분기 생성
+    if (hasExistingResult && versions.length < 6) {
+      const nextIndex = versions.length;
+      const newVerId = `v-${generateId()}`;
+      
+      let updatedVersions = [...versions];
+      // [상태 전칙] V1 -> V2 전환 시 V1 Red로 박제
+      if (versions.length === 1 && versions[0].id === 'v1') {
+        updatedVersions[0] = { ...updatedVersions[0], color: LEGACY_RED };
+        
+        // V1 관련 인프라 Red 전이
+        state.edges.filter(e => e.source === promptNodeId && (!(e.data as any)?.color || (e.data as any)?.color === INITIAL_GRAY))
+          .forEach(e => {
+            set(s => ({ edges: s.edges.map(ed => ed.id === e.id ? { ...ed, data: { ...ed.data, color: LEGACY_RED } } : ed) }));
+            set(s => ({ nodes: s.nodes.map(n => n.id === e.target ? { ...n, data: { ...n.data, versionColor: LEGACY_RED } } : n) }));
+          });
+      }
+
+      const newVersion: PromptVersion = {
+        id: newVerId,
+        text: currentVer.text,
+        color: GEMS_PALETTE[nextIndex - 1]?.main,
+        timestamp: Date.now()
+      };
+      
+      state.updateNodeData(promptNodeId, {
+        versions: [...updatedVersions, newVersion],
+        currentVersionId: newVerId
+      });
+      targetVersion = newVersion;
+    }
+
     const incomingEdge = state.edges.find((e) => e.target === promptNodeId);
     if (!incomingEdge) return;
     const parentNode = state.nodes.find((n) => n.id === incomingEdge.source);
@@ -307,69 +489,145 @@ export const useStore = create<AppState>((set, get) => ({
 
     const prevFinalOutput = parentNode.data.finalOutput ?? '';
     const turn = (parentNode.data.turn ?? 0) + 1;
-    const promptText = currentVer.text;
+    const promptText = targetVersion.text;
 
     state.setIsGenerating(true);
+    const newGroupId = `node-group-regen-${generateId()}`;
+    const versionColor = targetVersion.color || INITIAL_GRAY;
+
+    // Ghost Node 즉시 생성
+    state.addNode({
+      id: newGroupId,
+      type: 'turnGroup',
+      position: { x: promptNode.position.x + 350, y: promptNode.position.y },
+      loading: true,
+      data: {
+        turn,
+        versionColor,
+      },
+    } as any);
+
+    // Edge 즉시 연결
+    state.onConnect({
+      source: promptNodeId,
+      target: newGroupId,
+      sourceHandle: null,
+      targetHandle: null,
+      data: { protocol: 'dialectic', color: versionColor }
+    } as any);
+
     try {
-      const reResult = await regenerateDiscussion(
+      await regenerateDiscussion(
         prevFinalOutput,
         promptText,
-        state.selectedExpertIds
-      );
+        state.currentMode,
+        state.selectedExpertIds,
+        {
+          onSquadSelected: (squad) => {
+            state.updateNodeData(newGroupId, { ...squad });
+          },
+          onStreamChunk: (partial) => {
+            state.updateNodeData(newGroupId, { ...partial });
+          }
+        }
+      ).then(fullResult => {
+        state.updateNodeData(newGroupId, { ...fullResult, loading: false });
+      });
+    } catch (e) {
+      console.error('Re-generate 실패:', e);
+      state.deleteNode(newGroupId);
+      alert('재생성에 실패했습니다. 다시 시도해주세요.');
+    } finally {
+      state.setIsGenerating(false);
+    }
+  },
 
-      const newGroupId = `node-group-regen-${Date.now()}`;
-      const newX = promptNode.position.x + 350;
-      const newY = promptNode.position.y;
+  combineAndGenerateVCS: async (sourceIds: string[], customPrompt?: string) => {
+    const state = get();
+    if (sourceIds.length === 0) return;
 
-      // 3. 탭 컬러 결정 및 주입
-      const versionColor = currentVer.color;
+    state.setIsGenerating(true);
 
-      state.addNode({
-        id: newGroupId,
-        type: 'turnGroup',
-        position: { x: newX, y: newY },
-        data: {
-          turn,
-          metacognitiveDefinition: reResult.metacognitiveDefinition,
-          workflowSimulationLog: reResult.workflowSimulationLog,
-          thesis: reResult.thesis,
-          antithesis: reResult.antithesis,
-          synthesis: reResult.synthesis,
-          support: reResult.support,
-          shortFinalOutput: reResult.shortFinalOutput,
-          finalOutput: reResult.finalOutput,
-          transparencyReport: reResult.transparencyReport,
-          versionColor, // 탭 색상 상속
-        },
-      } as AppNode);
+    // 1. 소스 노드들로부터 텍스트 추출 및 취합 (Aggregation Process)
+    const aggregatedParts = sourceIds.map((id, index) => {
+      const node = state.nodes.find(n => n.id === id);
+      if (!node) return `Source ${index + 1}: [Unknown]`;
+      
+      let content = '';
+      let typeLabel = '';
+      
+      if (isStickyNode(node)) {
+        content = node.data.fullText || node.data.text;
+        typeLabel = 'Sticky Note';
+      } else if (isTurnGroupNode(node)) {
+        content = node.data.finalOutput;
+        typeLabel = 'VCS Result';
+      } else if (isPromptNode(node)) {
+        const pData = getPromptNodeData(node.data);
+        content = pData.versions.find(v => v.id === pData.currentVersionId)?.text || '';
+        typeLabel = 'Prompt';
+      }
+      
+      return `[Source ${index + 1} - ${typeLabel}]\n${content}`;
+    });
 
+    const aggregatedPrompt = `[통합 안건 — 다중 노드 결합 결론 도출]\n\n${aggregatedParts.join('\n\n')}\n\n---\n[추가 지시사항]\n${customPrompt || '위 소스들을 종합하여 최적의 전략을 도출하십시오.'}`;
+
+    // 2. 결과 노드(TurnGroupNode) 생성 위치 계산 (첫 번째 노드 기준 우측)
+    const firstNode = state.nodes.find(n => n.id === sourceIds[0]);
+    const spawnPos = firstNode 
+      ? { x: firstNode.position.x + 650, y: firstNode.position.y }
+      : { x: 500, y: 500 };
+
+    const newGroupId = `node-group-combined-${generateId()}`;
+    const versionColor = INITIAL_GRAY;
+
+    // 3. TurnGroupNode 생성 (캔버스에는 중간 노드는 보이지 않음)
+    state.addNode({
+      id: newGroupId,
+      type: 'turnGroup',
+      position: spawnPos,
+      loading: true,
+      data: {
+        turn: 1,
+        versionColor,
+        aggregatedPrompt, // 추출된 원본 텍스트 저장
+      },
+    } as any);
+
+    // 4. 모든 소스 노드와 새 노드 연결 (Multi-Edge)
+    sourceIds.forEach(sourceId => {
       state.onConnect({
-        source: promptNodeId,
+        source: sourceId,
         target: newGroupId,
         sourceHandle: null,
         targetHandle: null,
         data: { protocol: 'dialectic', color: versionColor }
       } as any);
+    });
 
-      // 4. Generate 성공 시 새로운 탭 자동 생성 (최대 6개)
-      if (nodeData.versions.length < 6) {
-        const nextIndex = nodeData.versions.length;
-        const newVerId = `v-${Date.now()}`;
-        const newVersion: PromptVersion = {
-          id: newVerId,
-          text: currentVer.text, // 이전 텍스트 복사
-          color: GEMS_PALETTE[nextIndex].main,
-          timestamp: Date.now()
-        };
-        
-        get().updateNodeData(promptNodeId, {
-          versions: [...nodeData.versions, newVersion],
-          currentVersionId: newVerId
-        });
-      }
+    // 5. VCS 토론 실행 (Strict Single-Turn)
+    // 단 한 번의 호출로 요약(aggregatedSummary)부터 결론까지 스트리밍합니다.
+    try {
+      await generateDiscussion(
+        aggregatedPrompt,
+        state.currentMode || 'A',
+        state.selectedExpertIds,
+        {
+          onSquadSelected: (squad) => {
+            state.updateNodeData(newGroupId, { ...squad });
+          },
+          onStreamChunk: (partial) => {
+            state.updateNodeData(newGroupId, { ...partial });
+          }
+        }
+      ).then(fullResult => {
+        state.updateNodeData(newGroupId, { ...fullResult, loading: false });
+      });
     } catch (e) {
-      console.error('Re-generate 실패:', e);
-      alert('재생성에 실패했습니다. 다시 시도해주세요.');
+      console.error('Combined VCS 실패:', e);
+      state.deleteNode(newGroupId);
+      alert('통합 토론 생성에 실패했습니다.');
     } finally {
       state.setIsGenerating(false);
     }

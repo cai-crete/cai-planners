@@ -1,7 +1,7 @@
 import { memo, useMemo, useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { EXPERTS } from '../lib/experts';
-import { cn, sanitize } from '../lib/utils';
+import { cn, sanitize, sanitizeShort } from '../lib/utils';
 import { X, Copy, ChevronRight, Settings, 
   Bot, Layers, Check, Loader2, ChevronDown, MessageSquare, Sparkles, Info,
   Orbit, Search, GitBranch, Shield, Zap, Compass, Wind, Hash,
@@ -9,12 +9,17 @@ import { X, Copy, ChevronRight, Settings,
 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { summarizeNote } from '../lib/enhanceNote';
-import { generateDiscussion } from '../lib/gemini';
+import { 
+  generateDiscussion, generateSynapseSeed, convergeAndExtractSynapse 
+} from '../lib/gemini';
 import { 
   AppNode, TurnGroupNodeData, ExpertTurnData, isTurnGroupNode, 
-  isPromptNode, PromptNodeData, StickyNodeData, isStickyNode 
+  isPromptNode, PromptNodeData, StickyNodeData, isStickyNode, getPromptNodeData,
+  isSynapseNode
 } from '../types/nodes';
-import { GEMS_PALETTE } from '../store/useStore';
+import { 
+  GEMS_PALETTE, INITIAL_GRAY, LEGACY_RED, generateId 
+} from '../store/useStore';
 
 const IconMap: Record<string, any> = {
   Orbit, Search, GitBranch, Shield, Zap, Compass, Wind, Hash,
@@ -39,6 +44,8 @@ export const RightPanel = memo(() => {
     currentMode,
     generationTurn,
     setGenerationTurn,
+    rightPanelWidth,
+    setRightPanelWidth
   } = useStore();
 
   const [editedText, setEditedText] = useState('');
@@ -46,6 +53,40 @@ export const RightPanel = memo(() => {
   const [isSaving, setIsSaving] = useState(false);
   const [isExpertsOpen, setIsExpertsOpen] = useState(false);
   const [expandedRoles, setExpandedRoles] = useState<string[]>([]);
+  const [isResizing, setIsResizing] = useState(false);
+
+  // [UI 혁신] 리사이징 로직
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      // [정정] 마우스 위치(e.clientX)는 흰색 패널의 좌측 끝입니다.
+      // 실제 컨테이너의 너비는 (마우스에서 우측 끝까지의 거리) + (좌측 버튼 영역의 너비 52px)가 되어야 합니다.
+      const buttonOffset = 52; 
+      const newWidth = (window.innerWidth - e.clientX - 16) + buttonOffset; 
+      const maxWidth = window.innerWidth * 0.5;
+      const minWidth = 284;
+
+      if (newWidth >= minWidth && newWidth <= maxWidth) {
+        setRightPanelWidth(newWidth);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      document.body.style.cursor = 'default';
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    document.body.style.cursor = 'col-resize';
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'default';
+    };
+  }, [isResizing, setRightPanelWidth]);
 
   const toggleRoleExpansion = (role: string) => {
     setExpandedRoles(prev => 
@@ -53,7 +94,6 @@ export const RightPanel = memo(() => {
     );
   };
 
-  // selectedNodeId가 "groupId::role" 형태인지 파싱
   const parsedSelection = useMemo(() => {
     if (!selectedNodeId) return { groupId: null, role: null };
     if (selectedNodeId.includes('::')) {
@@ -64,13 +104,13 @@ export const RightPanel = memo(() => {
   }, [selectedNodeId]);
 
   const selectedNode = useMemo(
-    () => nodes.find((n) => n.id === parsedSelection.groupId || n.id === selectedNodeId),
+    () => nodes.find((n) => n.id === (parsedSelection.groupId || selectedNodeId)),
     [nodes, selectedNodeId, parsedSelection.groupId]
   );
 
   const isTurnGroup = selectedNode?.type === 'turnGroup';
 
-  const stickyFullText = !isTurnGroup && selectedNode
+  const stickyFullText = !isTurnGroup && selectedNode && isStickyNode(selectedNode)
     ? (selectedNode.data as StickyNodeData).fullText || (selectedNode.data as StickyNodeData).text
     : undefined;
 
@@ -79,7 +119,7 @@ export const RightPanel = memo(() => {
   }, [selectedNodeId, stickyFullText]);
 
   const handleSave = async () => {
-    if (!selectedNode || !editedText.trim() || isSaving) return;
+    if (!selectedNode || !(editedText || '').trim() || isSaving) return;
     setIsSaving(true);
     try {
       const summary = await summarizeNote(editedText);
@@ -92,7 +132,7 @@ export const RightPanel = memo(() => {
   };
 
   const handleDashboardGenerate = async () => {
-    if (!dashboardNote.trim() || isGenerating) return;
+    if (!(dashboardNote || '').trim() || isGenerating) return;
     if (generationTurn >= 3) {
       alert('최대 턴(3턴)에 도달했습니다. 캔버스를 초기화 한 후 다시 시도해 주세요.');
       return;
@@ -102,18 +142,18 @@ export const RightPanel = memo(() => {
     try {
       const result = await generateDiscussion(dashboardNote, currentMode, selectedExpertIds);
       const currentTurn = generationTurn + 1;
-      const groupId = `node-group-${Date.now()}`;
+      const groupId = `node-group-${generateId()}`;
       
-      // 화면 중앙 부근에 스폰
       const cx = window.innerWidth / 2;
       const cy = window.innerHeight / 2 - 100;
 
       addNode({
         id: groupId,
         type: 'turnGroup',
-        position: { x: cx - 480, y: cy }, // 그룹 노드가 960px 이므로 절반 빼줌
+        position: { x: cx - 480, y: cy },
         data: {
           turn: currentTurn,
+          versionColor: INITIAL_GRAY,
           thesis: result.thesis,
           antithesis: result.antithesis,
           synthesis: result.synthesis,
@@ -127,7 +167,7 @@ export const RightPanel = memo(() => {
       } as any);
 
       setGenerationTurn(currentTurn);
-      setDashboardNote(''); // 입력 후 비우기
+      setDashboardNote('');
     } catch (error) {
       console.error('Generation failed:', error);
       alert('생성에 실패했습니다.');
@@ -145,19 +185,19 @@ export const RightPanel = memo(() => {
     synthesis: '통합 (SYNTHESIS)',
   };
 
-  /** 그룹 노드에서 특정 전문가가 선택되었을 때 렌더링 (B&W) */
   const renderSingleExpert = () => {
     const role = parsedSelection.role as 'thesis' | 'antithesis' | 'synthesis' | 'support';
-    const turnData = isTurnGroup ? (selectedNode?.data as TurnGroupNodeData)[role] : null;
+    const turnData = isTurnGroup ? (selectedNode?.data as TurnGroupNodeData)?.[role] : null;
     if (!turnData) return null;
-    const expert = EXPERTS.find((e) => e.id === turnData.expertId);
-    if (!expert) return null;
-
+    const expert = EXPERTS.find((e) => e.id === turnData.expertId) || { 
+      name: '분석 중...', 
+      iconName: 'Bot' 
+    };
+    
     const ExpertIcon = IconMap[expert.iconName || 'Bot'] || Bot;
     
     return (
       <div className="space-y-6 pt-2 h-full flex flex-col">
-        {/* Header with Icon & Role */}
         <div className="flex items-center gap-4 p-4 rounded-2xl border border-neutral-100 bg-neutral-50/50">
           <div className="h-12 w-12 rounded-lg bg-white border border-neutral-200 flex items-center justify-center overflow-hidden shadow-sm">
             <ExpertIcon className="h-6 w-6 text-black" />
@@ -168,9 +208,7 @@ export const RightPanel = memo(() => {
           </div>
         </div>
 
-        {/* Content Area */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-6">
-          {/* Keywords & Summary Section */}
+        <div className="space-y-6">
           <div className="space-y-3">
             <div className="flex flex-wrap gap-1.5">
               {(turnData.keywords || []).map((kw: string) => (
@@ -180,11 +218,10 @@ export const RightPanel = memo(() => {
               ))}
             </div>
             <div className="p-4 bg-white border border-neutral-100 rounded-xl shadow-sm italic text-[13px] leading-relaxed text-neutral-900 border-l-4 border-l-black">
-              "{turnData.shortContent}"
+              "{sanitizeShort(turnData.shortContent)}"
             </div>
           </div>
 
-          {/* Full Content */}
           <div className="text-[13px] leading-[1.8] text-neutral-800 font-medium whitespace-pre-wrap">
             {sanitize(turnData.fullContent)}
           </div>
@@ -202,7 +239,6 @@ export const RightPanel = memo(() => {
     );
   };
 
-  /** 그룹 전체 토론 로그 렌더링 (B&W Debate Log Style 복구) */
   const renderFullDebateLog = () => {
     const data = isTurnGroup ? (selectedNode?.data as TurnGroupNodeData) : null;
     if (!data) return null;
@@ -210,18 +246,19 @@ export const RightPanel = memo(() => {
     const roles: Array<'thesis' | 'antithesis' | 'support' | 'synthesis'> = ['thesis', 'antithesis', 'support', 'synthesis'];
     
     return (
-      <div className="flex flex-col h-full bg-white">
-        <div className="flex-1 overflow-y-auto custom-scrollbar space-y-8 pr-2">
-          {/* Expert Strategic Turns */}
+      <div className="flex flex-col bg-white">
+        <div className="space-y-8">
           <div className="space-y-6">
             <h3 className="text-[10px] font-black text-neutral-400 uppercase tracking-widest pl-1">
-              Strategic Debate Log
+              Discussion & Debate Log
             </h3>
             {roles.map((role) => {
               const turnData = data[role];
               if (!turnData) return null;
-              const expert = EXPERTS.find((e) => e.id === turnData.expertId);
-              if (!expert) return null;
+              const expert = EXPERTS.find((e) => e.id === turnData.expertId) || {
+                name: '전문가 선발 중...',
+                iconName: 'Bot'
+              };
               const ExpertIcon = IconMap[expert.iconName || 'Bot'] || Bot;
               const isExpanded = expandedRoles.includes(role);
 
@@ -249,7 +286,6 @@ export const RightPanel = memo(() => {
                     </button>
                   </div>
 
-                  {/* Keywords & Summary Preview */}
                   <div className="pl-9.5 space-y-2">
                     <div className="flex flex-wrap gap-1">
                       {(turnData.keywords || []).map((kw: string) => (
@@ -259,11 +295,10 @@ export const RightPanel = memo(() => {
                       ))}
                     </div>
                     <p className="text-[12px] leading-relaxed text-neutral-700 font-medium italic">
-                      "{turnData.shortContent}"
+                      "{sanitizeShort(turnData.shortContent)}"
                     </p>
                   </div>
 
-                  {/* Expandable Full Content */}
                   {isExpanded && (
                     <div className="pl-9.5 pt-2 animate-in fade-in slide-in-from-top-1 duration-200">
                       <p className="text-[12px] leading-[1.8] text-neutral-800 font-medium whitespace-pre-wrap border-l-2 border-neutral-100 pl-4 py-1">
@@ -276,7 +311,6 @@ export const RightPanel = memo(() => {
             })}
           </div>
 
-          {/* 8.3 Final Strategic Output (Integrated) */}
           <div className="space-y-4 pt-2">
              <h3 className="text-[10px] font-black text-black uppercase tracking-[0.2em] flex items-center gap-2">
                <Check className="h-4 w-4 bg-black text-white rounded p-0.5" /> 8.3 Final Strategic Output
@@ -286,7 +320,6 @@ export const RightPanel = memo(() => {
               </div>
           </div>
 
-          {/* 8.4 Metacognitive Transparency */}
           {data.transparencyReport && (
             <div className="space-y-4 pt-6 border-t border-neutral-100">
               <h3 className="text-[10px] font-black text-black uppercase tracking-[0.2em] flex items-center gap-2">
@@ -310,7 +343,6 @@ export const RightPanel = memo(() => {
           )}
         </div>
 
-        {/* Action Bar */}
         <div className="pt-6 border-t border-neutral-100">
           <button
             onClick={() => {
@@ -326,14 +358,13 @@ export const RightPanel = memo(() => {
     );
   };
 
-  /** Final Plan 렌더링 - 8.3 & 8.4 전문 통합 출력 (간격 축소) */
   const renderFinalPlan = () => {
     const data = isTurnGroup ? (selectedNode?.data as TurnGroupNodeData) : null;
     if (!data) return null;
 
     return (
-      <div className="flex flex-col h-full bg-white">
-        <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4 pr-2">
+      <div className="flex flex-col bg-white">
+        <div className="space-y-4">
           <div className="space-y-2">
             <div className="compact-markdown prose prose-neutral max-w-none text-black select-text whitespace-normal [&_h1]:text-[15px] [&_h1]:font-black [&_h1]:pb-2 [&_h1]:border-b-2 [&_h1]:border-black [&_h2]:text-[13px] [&_h2]:font-black [&_h2]:flex [&_h2]:items-center [&_h2]:gap-2 before:[&_h2]:content-['■'] before:[&_h2]:text-black before:[&_h2]:text-[10px] [&_h3]:text-[12px] [&_h3]:font-black [&_h3]:pl-4 [&_h3]:border-l-4 [&_h3]:border-neutral-900 [&_p]:text-[12px] [&_p]:leading-[1.8] [&_p]:text-neutral-900 [&_p]:font-medium [&_strong]:font-black [&_strong]:text-black [&_strong]:underline [&_strong]:decoration-neutral-300 [&_strong]:underline-offset-4 [&_ul]:list-disc [&_ul]:marker:text-black [&_ol]:list-decimal [&_ol]:marker:font-black [&_li]:text-[12px] [&_li]:leading-[1.8] [&_li]:text-neutral-900 [&_blockquote]:border-l-4 [&_blockquote]:border-black [&_blockquote]:bg-neutral-50 [&_blockquote]:px-4 [&_blockquote]:py-3 [&_blockquote]:italic [&_blockquote]:rounded-r-lg [&_hr]:border-neutral-300">
               <Markdown>{sanitize(data.finalOutput || '').replace(/### 8\.3 Final Strategic Output/g, '')}</Markdown>
@@ -367,11 +398,11 @@ export const RightPanel = memo(() => {
             onClick={() => {
               const report = data.transparencyReport;
               const repText = report ? `\n\n[Transparency Report]\n- Self Healing: ${report.selfHealingLog}\n- Truthfulness: ${report.truthfulnessCheck}\n- Real Impact: ${report.realImpact}\n- Next Action: ${report.nextActionSuggestion}` : '';
-              navigator.clipboard.writeText((data.finalOutput || '').replace(/### 8\.3 Final Strategic Output/g, '').trim() + repText);
+              navigator.clipboard.writeText((data.finalOutput || '').replace(/### 8\.3 Final Strategic Output/g, '').replace(/### 8\.3 Final Consensus Opinion/g, '').trim() + repText);
             }}
             className="w-full flex items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white px-4 py-3 text-[12px] font-black text-black hover:bg-neutral-50 transition-all shadow-sm active:scale-[0.98]"
           >
-            <Copy className="h-4 w-4" /> Copy Final Plan
+            <Copy className="h-4 w-4" /> Copy Final Opinion
           </button>
         </div>
       </div>
@@ -381,36 +412,64 @@ export const RightPanel = memo(() => {
   return (
     <div
       className={cn(
-        'absolute top-4 bottom-4 z-40 transition-all duration-300 ease-in-out flex items-start',
-        isRightPanelOpen ? 'right-4' : 'right-[-284px]'
+        'absolute top-4 bottom-4 z-40 flex items-start',
+        !isResizing && 'transition-all duration-300 ease-in-out'
       )}
+      style={{ 
+        right: isRightPanelOpen ? 16 : -rightPanelWidth - 20,
+        width: isRightPanelOpen ? rightPanelWidth : 284 // 닫혔을 때 핸들 위치 확보용 기본값
+      }}
     >
-      {/* Toggle Button (Gear Icon) */}
       <button
         onClick={toggleRightPanel}
         className={cn(
-          "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-all border border-transparent",
+          "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-all border border-transparent z-40",
           isRightPanelOpen 
             ? "mr-4 mt-2 bg-white shadow-md border-neutral-200 text-neutral-600 hover:bg-neutral-50" 
             : "mr-3 mt-1 text-neutral-400 hover:text-black hover:bg-neutral-50"
         )}
+        style={{
+          position: isRightPanelOpen ? 'relative' : 'absolute',
+          right: isRightPanelOpen ? 'auto' : 0
+        }}
         title={isRightPanelOpen ? 'Close Panel' : 'Open Panel'}
       >
         {isRightPanelOpen ? <ChevronRight className="h-4 w-4" /> : <Settings className="h-5 w-5" />}
       </button>
 
-      {/* Panel */}
-      <div className="w-[284px] h-full bg-[#fcfcfc] shadow-[-10px_0_30px_rgba(0,0,0,0.015)] border-l border-neutral-100 flex flex-col overflow-hidden font-sans">
-        <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col h-full relative">
+      <div 
+        className={cn(
+          "h-full bg-[#fcfcfc] shadow-[-10px_0_30px_rgba(0,0,0,0.015)] border-l border-neutral-100 flex flex-col overflow-visible font-sans flex-1 transition-opacity relative",
+          !isRightPanelOpen && "opacity-0 pointer-events-none"
+        )}
+      >
+        {/* [NEW] Resize Handle - 패널 좌측 경계선에 정확히 밀착 */}
+        {isRightPanelOpen && (
+          <div
+            onMouseDown={(e) => {
+              e.preventDefault();
+              setIsResizing(true);
+            }}
+            className={cn(
+              "absolute left-[-6px] top-0 bottom-0 w-[12px] cursor-col-resize z-[60] group flex items-center justify-center transition-all",
+              isResizing ? "bg-black/10" : "hover:bg-black/[0.04]"
+            )}
+          >
+            <div className={cn(
+              "h-10 w-[3px] rounded-full bg-neutral-200 transition-all group-hover:bg-neutral-500",
+              isResizing && "bg-black h-16 w-[4px]"
+            )} />
+          </div>
+        )}
+        <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col h-full relative overflow-hidden">
           
-          {/* 1. Header (Shared) */}
           <div className="p-4 border-b border-neutral-50 flex items-center justify-between bg-white/80 backdrop-blur-sm sticky top-0 z-10 transition-colors">
             <div className="flex items-center gap-1.5 px-4 py-1.5 border border-neutral-100 rounded-full cursor-pointer hover:bg-neutral-50 transition-colors shadow-sm bg-white">
               <span className="text-[11px] font-bold tracking-wider text-neutral-900">PLANNERS</span>
               <ChevronDown className="h-3 w-3 text-neutral-400" />
             </div>
             <div className="flex items-center gap-3">
-              <button className="p-2 border border-neutral-100 rounded-lg hover:bg-neutral-50 transition-colors">
+            <button className="p-2 border border-neutral-100 rounded-lg hover:bg-neutral-50 transition-colors">
                 <LayoutPanelLeft className="h-4 w-4 text-neutral-400" />
               </button>
               {selectedNode && (
@@ -424,29 +483,54 @@ export const RightPanel = memo(() => {
             </div>
           </div>
 
-          {/* 2. Main Content (Note/Debate Log) */}
           <div className="flex-1 flex flex-col min-h-0">
             {selectedNode && isTurnGroup ? (
-              /* Debate Log View (TurnGroup selected) */
               <div className="p-5 flex-1 overflow-y-auto custom-scrollbar">
                 <div className="mb-4">
                   <h3 className="text-[10px] font-black uppercase tracking-widest text-neutral-400 flex items-center gap-1.5">
                     <MessageSquare className="h-3.5 w-3.5" />
                     {parsedSelection.role
-                      ? parsedSelection.role === 'finalPlan' ? 'FINAL PLAN' : roleTitles[parsedSelection.role]
+                      ? parsedSelection.role === 'finalPlan' ? 'FINAL OPINION' : roleTitles[parsedSelection.role]
                       : 'DEBATE LOG'}
                   </h3>
                 </div>
-                <div className="h-full min-h-[500px]">
+
+                {/* [NEW] 취합된 통합 안건 섹션 (요약본 및 키워드 우선 노출) */}
+                {!parsedSelection.role && (
+                  <div className="mb-8 p-5 bg-neutral-50 rounded-[28px] border border-neutral-100 shadow-inner group transition-all hover:bg-white hover:shadow-md">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Bot className="h-4 w-4 text-black" />
+                      <span className="text-[10px] font-black uppercase tracking-widest text-black">Aggregated Context</span>
+                    </div>
+
+                    {/* 키워드 노출 */}
+                    {(selectedNode.data as TurnGroupNodeData).aggregatedKeywords && (selectedNode.data as TurnGroupNodeData).aggregatedKeywords!.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mb-4">
+                        {(selectedNode.data as TurnGroupNodeData).aggregatedKeywords?.map((kw, i) => (
+                          <span key={i} className="px-2 py-0.5 bg-neutral-200/50 text-neutral-600 rounded-full text-[9px] font-bold tracking-tight">
+                            # {kw}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* 요약본 또는 원본 텍스트 노출 */}
+                    <div className="text-[12px] leading-relaxed text-neutral-600 font-medium whitespace-pre-wrap max-h-64 overflow-y-auto custom-scrollbar select-text">
+                      {(selectedNode.data as TurnGroupNodeData).aggregatedSummary 
+                        ? (selectedNode.data as TurnGroupNodeData).aggregatedSummary 
+                        : (selectedNode.data as TurnGroupNodeData).aggregatedPrompt}
+                    </div>
+                  </div>
+                )}
+
+                <div className="min-h-[500px]">
                   {parsedSelection.role 
                     ? (parsedSelection.role === 'finalPlan' ? renderFinalPlan() : renderSingleExpert()) 
                     : renderFullDebateLog()}
                 </div>
               </div>
             ) : (
-              /* Note / Generation View (Dashboard or Sticky selected) */
               <div className="flex flex-col flex-1">
-                {/* Note Section */}
                 <div className="p-5 flex flex-col gap-2.5 min-h-0">
                   <div className="flex items-center justify-between px-1">
                     <span className="text-[10px] font-black uppercase tracking-[0.1em] text-neutral-400">
@@ -458,10 +542,8 @@ export const RightPanel = memo(() => {
                     {selectedNode && isPromptNode(selectedNode) && (
                       <div className="flex items-center gap-2 p-3 bg-neutral-50/50 border-b border-neutral-100 overflow-x-auto no-scrollbar">
                         {(() => {
-                          const pData = selectedNode.data as PromptNodeData;
-                          const vers = (pData.versions && pData.versions.length > 0) 
-                            ? pData.versions 
-                            : [{ id: 'v1', text: (pData as any).prompt || '', color: '#EF4444', timestamp: Date.now() }];
+                          const pData = getPromptNodeData(selectedNode.data);
+                          const vers = pData.versions || [];
                           
                           return vers.map((v, idx) => (
                             <button
@@ -472,12 +554,12 @@ export const RightPanel = memo(() => {
                               }}
                               className={cn(
                                 "flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border shrink-0",
-                                v.id === (pData.currentVersionId || vers[0].id)
+                                v.id === pData.currentVersionId
                                   ? "bg-white border-black text-black shadow-md scale-105"
                                   : "bg-white/50 border-transparent text-neutral-400 hover:bg-white hover:border-neutral-200"
                               )}
                             >
-                              <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: v.color || '#000' }} />
+                              <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: v.color || '#F9FAFB' }} />
                               V{idx + 1}
                             </button>
                           ));
@@ -485,6 +567,8 @@ export const RightPanel = memo(() => {
                       </div>
                     )}
                     <textarea
+                      id={`input-dashboard-${selectedNodeId || 'root'}`}
+                      name={`textarea-prompt-${selectedNodeId || 'root'}`}
                       value={selectedNodeIds.length > 1 
                         ? selectedNodeIds.map(id => {
                             const node = nodes.find(n => n.id === id);
@@ -497,35 +581,32 @@ export const RightPanel = memo(() => {
                               text = (node.data as TurnGroupNodeData).finalOutput;
                             }
                             else if (isPromptNode(node)) {
-                              const pData = node.data as PromptNodeData;
+                              const pData = getPromptNodeData(node.data);
                               const vers = pData.versions || [];
-                              const curId = pData.currentVersionId || (vers[0]?.id);
-                              text = (vers.find(v => v.id === curId) || vers[0] || { text: (pData as any).prompt || '' }).text;
+                              const curId = pData.currentVersionId;
+                              const currentVer = vers.find(v => v.id === curId) || vers[0];
+                              text = currentVer?.text || '';
                             }
                             return `[Node: ${node.id}]\n${text}`;
                           }).join('\n\n')
                         : (selectedNode && isPromptNode(selectedNode) 
                             ? (() => {
-                                const pData = selectedNode.data as PromptNodeData;
+                                const pData = getPromptNodeData(selectedNode.data);
                                 const vers = pData.versions || [];
-                                const curId = pData.currentVersionId || (vers[0]?.id);
-                                return (vers.find(v => v.id === curId) || vers[0] || { text: (pData as any).prompt || '' }).text;
+                                const curId = pData.currentVersionId;
+                                const currentVer = vers.find(v => v.id === curId) || vers[0];
+                                return currentVer?.text || '';
                               })()
-                            : (selectedNode && !isTurnGroup && isStickyNode(selectedNode) ? selectedNode.data.text : dashboardNote)
+                            : (selectedNode && !isTurnGroup && isStickyNode(selectedNode) ? (selectedNode.data as StickyNodeData).text : dashboardNote)
                           )
                       }
                       readOnly={selectedNodeIds.length > 1}
                       onChange={(e) => {
                         const val = e.target.value;
                         if (selectedNode && isPromptNode(selectedNode)) {
-                          const pData = selectedNode.data as PromptNodeData;
-                          const vers = pData.versions || [{ id: 'v1', text: (pData as any).prompt || '', color: '#EF4444', timestamp: Date.now() }];
-                          const curId = pData.currentVersionId || 'v1';
-                          const updated = vers.map(v => v.id === curId ? { ...v, text: val } : v);
-                          useStore.getState().updateNodeData(selectedNode.id, { 
-                            versions: updated,
-                            currentVersionId: curId
-                          });
+                          const pData = getPromptNodeData(selectedNode.data);
+                          const curId = pData.currentVersionId;
+                          useStore.getState().updatePromptTextWithBranching(selectedNode.id, curId, val);
                         } else if (selectedNode && !isTurnGroup && isStickyNode(selectedNode)) {
                           if (selectedNodeIds.length > 1) return;
                           useStore.getState().updateNodeData(selectedNode.id, { text: val });
@@ -538,13 +619,13 @@ export const RightPanel = memo(() => {
                         "w-full h-48 p-4 bg-transparent text-[11px] font-medium leading-relaxed text-neutral-800 placeholder-neutral-300 resize-none outline-none custom-scrollbar",
                         selectedNodeIds.length > 1 && "bg-neutral-50/50"
                       )}
-                      placeholder="Tell me your project, and I'll start the best expert team for you right away."
+                      placeholder="Tell me your agenda or topic, and I'll start the best expert team for you right away."
                     />
                   </div>
                 </div>
 
                 {/* Experts Section */}
-                <div className="p-5 flex-1 flex flex-col min-h-0 pt-0">
+                <div className="p-5 flex flex-col min-h-0 pt-0">
                   <div className="flex items-center justify-between mb-3 px-1 cursor-pointer select-none group/experts" 
                     onClick={() => setIsExpertsOpen(!isExpertsOpen)}>
                     <div className="flex items-center gap-1.5">
@@ -569,7 +650,7 @@ export const RightPanel = memo(() => {
                   </div>
                   
                   {isExpertsOpen && (
-                    <div className={cn('flex flex-col gap-1.5 overflow-y-auto custom-scrollbar pr-1 animate-in fade-in slide-in-from-top-1 duration-200', autoExpertMode ? 'opacity-40 pointer-events-none' : '')}>
+                    <div className={cn('flex flex-col gap-1.5 pr-1 animate-in fade-in slide-in-from-top-1 duration-200', autoExpertMode ? 'opacity-40 pointer-events-none' : '')}>
                       {EXPERTS.map((expert, idx) => {
                         const isSelected = selectedExpertIds.includes(expert.id);
                         
@@ -600,75 +681,37 @@ export const RightPanel = memo(() => {
                 {/* GENERATE Footer (Shared between Dashboard & Sticky) */}
                 <div className="p-5 pt-0 bg-[#fcfcfc]">
                   <button
+                    id="btn-generate-main"
+                    name="btn-generate-main"
                     onClick={async () => {
-                      const currentText = selectedNodeIds.length > 1
-                        ? selectedNodeIds.map(id => {
-                            const node = nodes.find(n => n.id === id);
-                            if (!node) return '';
-                            if (isStickyNode(node)) return node.data.text;
-                            if (isTurnGroupNode(node)) return node.data.finalOutput;
-                            return '';
-                          }).join('\n\n')
-                        : ((selectedNode && !isTurnGroup && isStickyNode(selectedNode)) ? selectedNode.data.text : dashboardNote);
+                      if (isGenerating) return;
 
-                      if (!currentText.trim() || isGenerating) return;
-                      
-                      setIsGenerating(true);
-                      try {
-                        const result = await generateDiscussion(currentText, currentMode, selectedExpertIds);
-                        const currentTurn = generationTurn + 1;
-                        const groupId = `node-group-${Date.now()}`;
-                        
-                        // 현재 선택된 노드의 우측, 혹은 화면 중앙
-                        const spawnPos = selectedNode 
-                          ? { x: selectedNode.position.x + 400, y: selectedNode.position.y - 100 }
-                          : { x: window.innerWidth / 2 - 480, y: window.innerHeight / 2 - 200 };
-
-                        addNode({
-                          id: groupId,
-                          type: 'turnGroup',
-                          position: spawnPos,
-                          data: {
-                            turn: currentTurn,
-                            thesis: result.thesis,
-                            antithesis: result.antithesis,
-                            synthesis: result.synthesis,
-                            support: result.support,
-                            finalOutput: result.finalOutput,
-                            shortFinalOutput: result.shortFinalOutput,
-                            workflowSimulationLog: result.workflowSimulationLog,
-                            metacognitiveDefinition: result.metacognitiveDefinition,
-                            transparencyReport: result.transparencyReport,
-                          },
-                        } as any);
-
-                        // 노드가 선택된 상태였다면 연결도 추가
-                        if (selectedNode) {
-                          useStore.getState().onConnect({
-                            source: selectedNode.id,
-                            target: groupId,
-                            sourceHandle: null,
-                            targetHandle: null
-                          });
-                        }
-
-                        setGenerationTurn(currentTurn);
-                        if (!selectedNode) setDashboardNote('');
-                      } catch (error) {
-                        console.error('Generation failed:', error);
-                        alert('생성에 실패했습니다.');
-                      } finally {
-                        setIsGenerating(false);
+                      // 사용자의 요구사항에 따라 모든 생성을 VCS 엔진(TurnGroupNode)으로 일원화합니다.
+                      if (selectedNodeIds.length > 1) {
+                        // 1. 다중 선택 결합 생성
+                        await useStore.getState().combineAndGenerateVCS(selectedNodeIds, dashboardNote);
+                        setDashboardNote('');
+                      } else if (selectedNode && isStickyNode(selectedNode)) {
+                        // 2. 단일 스티키 노드로부터 생성 (VCS 통합)
+                        await useStore.getState().combineAndGenerateVCS([selectedNode.id], dashboardNote);
+                        setDashboardNote('');
+                      } else if (selectedNode && isPromptNode(selectedNode)) {
+                        // 3. 프롬프트 노드로부터 생성
+                        await useStore.getState().combineAndGenerateVCS([selectedNode.id], dashboardNote);
+                        setDashboardNote('');
+                      } else {
+                        // 4. 소스 없는 신규 생성
+                        await handleDashboardGenerate();
                       }
                     }}
                     disabled={
                       isGenerating || 
-                      (selectedNodeIds.length <= 1 && !dashboardNote.trim() && !(selectedNode && isStickyNode(selectedNode) && selectedNode.data.text.trim())) ||
+                      (selectedNodeIds.length <= 1 && !(dashboardNote || "").trim() && !(selectedNode && isStickyNode(selectedNode) && (selectedNode.data.text || "").trim())) ||
                       (selectedNodeIds.length > 1 && selectedNodeIds.every(id => {
                         const n = nodes.find(node => node.id === id);
                         if (!n) return true;
-                        if (isStickyNode(n)) return !n.data.text.trim();
-                        if (isTurnGroupNode(n)) return !n.data.finalOutput.trim();
+                        if (isStickyNode(n)) return !(n.data.text || "").trim();
+                        if (isTurnGroupNode(n)) return !(n.data.finalOutput || "").trim();
                         return true;
                       }))
                     }

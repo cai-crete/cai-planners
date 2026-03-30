@@ -4,13 +4,13 @@ import { EXPERTS } from '../../lib/experts';
 import { 
   ArrowRight, Sparkles, Bot, MessageSquare,
   Orbit, Search, GitBranch, Shield, Zap, Compass, Wind, Hash,
-  History, Target, Cpu, PenTool, Box, Scale
+  History, Target, Cpu, PenTool, Box, Scale, Trash2
 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
-import { cn, sanitize } from '../../lib/utils';
+import { cn, sanitize, sanitizeShort } from '../../lib/utils';
 import { 
   TurnGroupNodeData, ExpertTurnData, isTurnGroupNode, 
-  isPromptNode, PromptNodeData 
+  isPromptNode, PromptNodeData, getPromptNodeData 
 } from '../../types/nodes';
 import { GEMS_PALETTE } from '../../store/useStore';
 
@@ -26,7 +26,7 @@ export const TurnGroupNode = memo(({ id, data, selected }: NodeProps<Node<TurnGr
   const selectedNodeIds = useStore(state => state.selectedNodeIds);
 
   const palette = (data.versionColor && GEMS_PALETTE) ? GEMS_PALETTE.find(p => p.main === data.versionColor) : null;
-  const bgColor = palette ? palette.pale : '#EEEEEE';
+  const bgColor = palette ? palette.pale : '#F9FAFB';
   const accentColor = palette ? palette.main : '#000000';
 
   const isFocusSelected = useMemo(() => {
@@ -39,7 +39,7 @@ export const TurnGroupNode = memo(({ id, data, selected }: NodeProps<Node<TurnGr
 
   const handleEnhance = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!prompt.trim() || isEnhancing) return;
+    if (!(prompt || '').trim() || isEnhancing) return;
     setIsEnhancing(true);
     // Note: implementation details for enhancePromptForRegenerate might vary, 
     // but we'll stick to the core logic.
@@ -114,9 +114,9 @@ export const TurnGroupNode = memo(({ id, data, selected }: NodeProps<Node<TurnGr
           if (edge) {
             const parentNode = state.nodes.find(n => n.id === edge.source);
             if (parentNode && isPromptNode(parentNode)) {
-              // 엣지의 컬러와 일치하는 프롬프트 버전 탐색
+              const pData = getPromptNodeData(parentNode.data);
               const edgeColor = (edge.data as any)?.color;
-              const matchingVersion = (parentNode.data as PromptNodeData).versions.find(v => v.color === edgeColor);
+              const matchingVersion = (pData.versions || []).find(v => v.color === edgeColor);
               if (matchingVersion) {
                 state.updateNodeData(parentNode.id, { currentVersionId: matchingVersion.id });
               }
@@ -124,8 +124,15 @@ export const TurnGroupNode = memo(({ id, data, selected }: NodeProps<Node<TurnGr
           }
         }}
       >
-        <div className="flex items-center justify-between mb-4 opacity-30">
-          <span className="text-[8px] font-black uppercase tracking-[0.2em] text-black">FINAL PLAN</span>
+        <div className="flex items-center justify-between mb-4">
+          <span className="text-[8px] font-black uppercase tracking-[0.2em] text-black opacity-30">FINAL ARGUMENT</span>
+          <Trash2 
+            className="h-3.5 w-3.5 text-neutral-400 hover:text-black transition-colors cursor-pointer" 
+            onClick={(e) => {
+              e.stopPropagation();
+              useStore.getState().deleteNode(id);
+            }}
+          />
         </div>
         
         <div className="flex-1 flex flex-col justify-center">
@@ -136,12 +143,19 @@ export const TurnGroupNode = memo(({ id, data, selected }: NodeProps<Node<TurnGr
             >
               <Bot className="h-3 w-3 text-white" />
             </div>
-            <h2 className="text-[13px] font-black tracking-tight text-neutral-900 uppercase">Final Strategic Plan</h2>
+            <h2 className="text-[13px] font-black tracking-tight text-neutral-900 uppercase">Final Opinion Report</h2>
           </div>
           
           <div className="relative pl-6 border-l border-neutral-100">
             <p className="text-[12.5px] leading-[1.65] font-medium text-neutral-900 line-clamp-none">
-              {sanitize(data.shortFinalOutput || data.finalOutput || '')}
+              {/* [G3 FIX] shortFinalOutput 우선 사용. 없을 경우 finalOutput 200자 truncate로 전문 노출 방지 */}
+              {sanitizeShort(
+                data.shortFinalOutput
+                  ? data.shortFinalOutput
+                  : (data.finalOutput || '').length > 200
+                    ? (data.finalOutput || '').slice(0, 200).trimEnd() + '...'
+                    : (data.finalOutput || '')
+              )}
             </p>
           </div>
         </div>
@@ -164,6 +178,8 @@ export const TurnGroupNode = memo(({ id, data, selected }: NodeProps<Node<TurnGr
           
           <div className="relative rounded-2xl border border-neutral-200 bg-neutral-50/30 p-1">
             <textarea
+              id={`input-regen-${id}`}
+              name={`textarea-regen-${id}`}
               className="w-full h-[120px] resize-none outline-none text-[13px] text-neutral-800 placeholder-neutral-400 bg-transparent custom-scrollbar p-3 pt-2"
               placeholder="Enter instructions for regeneration..."
               value={prompt}

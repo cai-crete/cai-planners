@@ -17,6 +17,7 @@ import { LeftPanel } from './LeftPanel';
 import { RightPanel } from './RightPanel';
 import { TurnGroupNode } from './nodes/TurnGroupNode';
 import { PromptNode } from './nodes/PromptNode';
+import { SynapseNode } from './nodes/SynapseNode';
 import { ProtocolEdge } from './edges/ProtocolEdge';
 import { AppNode } from '../types/nodes';
 
@@ -25,6 +26,7 @@ const nodeTypes = {
   discussion: DiscussionNode,
   turnGroup: TurnGroupNode,
   promptNode: PromptNode,
+  synapseNode: SynapseNode,
 };
 
 const edgeTypes = {
@@ -41,13 +43,17 @@ function Flow() {
     setSelectedNodeId,
     setSelectedNodeIds,
     setRightPanelOpen,
+    deleteNodes,
     isGenerating,
     toolMode,
   } = useStore();
   
   const { fitView, setCenter } = useReactFlow();
 
-  const handleNodeClick = useCallback((_, node) => {
+  const handleNodeClick = useCallback((event: React.MouseEvent, node: any) => {
+    // Shift 키가 들려있는 경우 React Flow의 기본 다중 선택 로직에 맡김
+    if (event.shiftKey) return;
+    
     setSelectedNodeId(node.id);
     setRightPanelOpen(true);
   }, [setSelectedNodeId, setRightPanelOpen]);
@@ -64,8 +70,8 @@ function Flow() {
   const handlePaneClick = useCallback(() => {
     setSelectedNodeId(null);
     setSelectedNodeIds([]);
-    setRightPanelOpen(false);
-  }, [setSelectedNodeId, setSelectedNodeIds, setRightPanelOpen]);
+    // setRightPanelOpen(false); // 빈 영역 클릭 시 패널이 닫히지 않도록 주석 처리
+  }, [setSelectedNodeId, setSelectedNodeIds]);
 
   const handleRecenter = useCallback(() => {
     fitView({ duration: 800, padding: 0.2 });
@@ -82,6 +88,9 @@ function Flow() {
         onNodeClick={handleNodeClick}
         onPaneClick={handlePaneClick}
         onSelectionChange={handleSelectionChange}
+        onNodesDelete={(deleted) => deleteNodes(deleted.map(n => n.id))}
+        deleteKeyCode="Delete"
+        multiSelectionKeyCode="Shift"
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         defaultEdgeOptions={{ type: 'protocolEdge' }}
