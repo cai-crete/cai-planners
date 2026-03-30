@@ -8,7 +8,11 @@ import {
 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { cn, sanitize } from '../../lib/utils';
-import { TurnGroupNodeData, ExpertTurnData } from '../../types/nodes';
+import { 
+  TurnGroupNodeData, ExpertTurnData, isTurnGroupNode, 
+  isPromptNode, PromptNodeData 
+} from '../../types/nodes';
+import { GEMS_PALETTE } from '../../store/useStore';
 
 const IconMap: Record<string, any> = {
   Orbit, Search, GitBranch, Shield, Zap, Compass, Wind, Hash,
@@ -20,6 +24,10 @@ export const TurnGroupNode = memo(({ id, data, selected }: NodeProps<Node<TurnGr
   const [isEnhancing, setIsEnhancing] = useState(false);
   const selectedNodeId = useStore(state => state.selectedNodeId);
   const selectedNodeIds = useStore(state => state.selectedNodeIds);
+
+  const palette = (data.versionColor && GEMS_PALETTE) ? GEMS_PALETTE.find(p => p.main === data.versionColor) : null;
+  const bgColor = palette ? palette.pale : '#EEEEEE';
+  const accentColor = palette ? palette.main : '#000000';
 
   const isFocusSelected = useMemo(() => {
     return selectedNodeId === id || (selectedNodeId && selectedNodeId.startsWith(id + '::'));
@@ -80,9 +88,10 @@ export const TurnGroupNode = memo(({ id, data, selected }: NodeProps<Node<TurnGr
   return (
     <div
       className={cn(
-        'w-[540px] rounded-[40px] bg-[#EEEEEE] p-3 shadow-2xl relative transition-all duration-300 border border-neutral-200 flex items-stretch gap-1 cursor-default hover:ring-2 hover:ring-black/20',
+        'w-[540px] rounded-[40px] p-3 shadow-2xl relative transition-all duration-300 border border-neutral-200 flex items-stretch gap-1 cursor-default hover:ring-2 hover:ring-black/20',
         (selected || isFocusSelected || isSingleNodeSelected) && 'border-black ring-2 ring-black/20'
       )}
+      style={{ backgroundColor: bgColor }}
     >
       <Handle type="target" position={Position.Top} className="opacity-0" />
 
@@ -99,6 +108,20 @@ export const TurnGroupNode = memo(({ id, data, selected }: NodeProps<Node<TurnGr
         onClick={() => {
           const state = useStore.getState();
           state.setSelectedNodeId(id);
+          
+          // 부모 프롬프트 노드 탐색 및 탭 전환 (1:1 매칭)
+          const edge = state.edges.find(e => e.target === id);
+          if (edge) {
+            const parentNode = state.nodes.find(n => n.id === edge.source);
+            if (parentNode && isPromptNode(parentNode)) {
+              // 엣지의 컬러와 일치하는 프롬프트 버전 탐색
+              const edgeColor = (edge.data as any)?.color;
+              const matchingVersion = (parentNode.data as PromptNodeData).versions.find(v => v.color === edgeColor);
+              if (matchingVersion) {
+                state.updateNodeData(parentNode.id, { currentVersionId: matchingVersion.id });
+              }
+            }
+          }
         }}
       >
         <div className="flex items-center justify-between mb-4 opacity-30">
@@ -107,7 +130,10 @@ export const TurnGroupNode = memo(({ id, data, selected }: NodeProps<Node<TurnGr
         
         <div className="flex-1 flex flex-col justify-center">
           <div className="flex items-center gap-2.5 mb-6">
-            <div className="p-1.5 rounded-lg bg-black shadow-lg">
+            <div 
+              className="p-1.5 rounded-lg shadow-lg"
+              style={{ backgroundColor: accentColor }}
+            >
               <Bot className="h-3 w-3 text-white" />
             </div>
             <h2 className="text-[13px] font-black tracking-tight text-neutral-900 uppercase">Final Strategic Plan</h2>

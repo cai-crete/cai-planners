@@ -41,8 +41,16 @@ export interface TurnGroupNodeData extends Record<string, unknown> {
   transparencyReport: TransparencyReport;
 }
 
+export interface PromptVersion {
+  id: string;
+  text: string;
+  color: string;
+  timestamp: number;
+}
+
 export interface PromptNodeData extends Record<string, unknown> {
-  prompt: string;
+  versions: PromptVersion[];
+  currentVersionId: string;
 }
 
 export type DiscussionType = 'thesis' | 'antithesis' | 'synthesis';

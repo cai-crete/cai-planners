@@ -59,6 +59,7 @@ export const ProtocolEdge = memo(({
   }, [selectedNodeIds, edges, id]);
 
   const protocol = (data?.protocol as string) || 'default';
+  const edgeColor = (data?.color as string) || null;
 
   // 프로토콜별 기본 스타일 정의
   const getBaseStyle = () => {
@@ -77,13 +78,14 @@ export const ProtocolEdge = memo(({
   const finalStyle = isHighlighted
     ? {
         ...style,
-        stroke: '#000000',
+        stroke: edgeColor || '#000000',
         strokeWidth: 3,
         transition: 'all 0.3s ease-in-out',
         strokeDasharray: 'none', // 하이라이트 시 점선 제거
       }
     : {
         ...style,
+        stroke: edgeColor || getBaseStyle().stroke,
         ...getBaseStyle(),
         transition: 'all 0.3s ease-in-out',
       };
@@ -97,7 +99,7 @@ export const ProtocolEdge = memo(({
         interactionWidth={20}
       />
       {isHighlighted && (
-        <circle r="3" fill="#000">
+        <circle r="3" fill={edgeColor || "#000"}>
           <animateMotion 
             dur="2s" 
             repeatCount="indefinite" 

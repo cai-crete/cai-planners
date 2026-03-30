@@ -11,9 +11,10 @@ import Markdown from 'react-markdown';
 import { summarizeNote } from '../lib/enhanceNote';
 import { generateDiscussion } from '../lib/gemini';
 import { 
-  AppNode, TurnGroupNodeData, StickyNodeData, 
-  isStickyNode, isTurnGroupNode 
+  AppNode, TurnGroupNodeData, ExpertTurnData, isTurnGroupNode, 
+  isPromptNode, PromptNodeData, StickyNodeData, isStickyNode 
 } from '../types/nodes';
+import { GEMS_PALETTE } from '../store/useStore';
 
 const IconMap: Record<string, any> = {
   Orbit, Search, GitBranch, Shield, Zap, Compass, Wind, Hash,
@@ -446,7 +447,7 @@ export const RightPanel = memo(() => {
               /* Note / Generation View (Dashboard or Sticky selected) */
               <div className="flex flex-col flex-1">
                 {/* Note Section */}
-                <div className="p-5 flex flex-col gap-2.5">
+                <div className="p-5 flex flex-col gap-2.5 min-h-0">
                   <div className="flex items-center justify-between px-1">
                     <span className="text-[10px] font-black uppercase tracking-[0.1em] text-neutral-400">
                       {selectedNodeIds.length > 1 ? `${selectedNodeIds.length} NODES SELECTED` : 'CODE'}
@@ -454,30 +455,87 @@ export const RightPanel = memo(() => {
                     <Copy className="h-3 w-3 text-neutral-300 cursor-pointer hover:text-neutral-500 transition-colors" />
                   </div>
                   <div className="bg-white rounded-2xl border border-neutral-100 shadow-sm relative overflow-hidden group">
+                    {selectedNode && isPromptNode(selectedNode) && (
+                      <div className="flex items-center gap-2 p-3 bg-neutral-50/50 border-b border-neutral-100 overflow-x-auto no-scrollbar">
+                        {(() => {
+                          const pData = selectedNode.data as PromptNodeData;
+                          const vers = (pData.versions && pData.versions.length > 0) 
+                            ? pData.versions 
+                            : [{ id: 'v1', text: (pData as any).prompt || '', color: '#EF4444', timestamp: Date.now() }];
+                          
+                          return vers.map((v, idx) => (
+                            <button
+                              key={v.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                useStore.getState().updateNodeData(selectedNode.id, { currentVersionId: v.id });
+                              }}
+                              className={cn(
+                                "flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all border shrink-0",
+                                v.id === (pData.currentVersionId || vers[0].id)
+                                  ? "bg-white border-black text-black shadow-md scale-105"
+                                  : "bg-white/50 border-transparent text-neutral-400 hover:bg-white hover:border-neutral-200"
+                              )}
+                            >
+                              <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: v.color || '#000' }} />
+                              V{idx + 1}
+                            </button>
+                          ));
+                        })()}
+                      </div>
+                    )}
                     <textarea
                       value={selectedNodeIds.length > 1 
                         ? selectedNodeIds.map(id => {
                             const node = nodes.find(n => n.id === id);
                             if (!node) return '';
                             let text = '';
-                            if (isStickyNode(node)) text = node.data.text;
-                            else if (isTurnGroupNode(node)) text = node.data.finalOutput;
+                            if (isStickyNode(node)) {
+                              text = (node.data as StickyNodeData).text;
+                            }
+                            else if (isTurnGroupNode(node)) {
+                              text = (node.data as TurnGroupNodeData).finalOutput;
+                            }
+                            else if (isPromptNode(node)) {
+                              const pData = node.data as PromptNodeData;
+                              const vers = pData.versions || [];
+                              const curId = pData.currentVersionId || (vers[0]?.id);
+                              text = (vers.find(v => v.id === curId) || vers[0] || { text: (pData as any).prompt || '' }).text;
+                            }
                             return `[Node: ${node.id}]\n${text}`;
                           }).join('\n\n')
-                        : (selectedNode && !isTurnGroup && isStickyNode(selectedNode) ? selectedNode.data.text : dashboardNote)
+                        : (selectedNode && isPromptNode(selectedNode) 
+                            ? (() => {
+                                const pData = selectedNode.data as PromptNodeData;
+                                const vers = pData.versions || [];
+                                const curId = pData.currentVersionId || (vers[0]?.id);
+                                return (vers.find(v => v.id === curId) || vers[0] || { text: (pData as any).prompt || '' }).text;
+                              })()
+                            : (selectedNode && !isTurnGroup && isStickyNode(selectedNode) ? selectedNode.data.text : dashboardNote)
+                          )
                       }
                       readOnly={selectedNodeIds.length > 1}
                       onChange={(e) => {
-                        if (selectedNodeIds.length > 1) return;
                         const val = e.target.value;
-                        if (selectedNode && !isTurnGroup && isStickyNode(selectedNode)) {
+                        if (selectedNode && isPromptNode(selectedNode)) {
+                          const pData = selectedNode.data as PromptNodeData;
+                          const vers = pData.versions || [{ id: 'v1', text: (pData as any).prompt || '', color: '#EF4444', timestamp: Date.now() }];
+                          const curId = pData.currentVersionId || 'v1';
+                          const updated = vers.map(v => v.id === curId ? { ...v, text: val } : v);
+                          useStore.getState().updateNodeData(selectedNode.id, { 
+                            versions: updated,
+                            currentVersionId: curId
+                          });
+                        } else if (selectedNode && !isTurnGroup && isStickyNode(selectedNode)) {
+                          if (selectedNodeIds.length > 1) return;
                           useStore.getState().updateNodeData(selectedNode.id, { text: val });
                         } else {
+                          if (selectedNodeIds.length > 1) return;
                           setDashboardNote(val);
                         }
                       }}
                       className={cn(
-                        "w-full h-36 p-4 bg-transparent text-[11px] font-medium leading-relaxed text-neutral-800 placeholder-neutral-300 resize-none outline-none custom-scrollbar",
+                        "w-full h-48 p-4 bg-transparent text-[11px] font-medium leading-relaxed text-neutral-800 placeholder-neutral-300 resize-none outline-none custom-scrollbar",
                         selectedNodeIds.length > 1 && "bg-neutral-50/50"
                       )}
                       placeholder="Tell me your project, and I'll start the best expert team for you right away."

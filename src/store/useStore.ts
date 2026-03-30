@@ -14,8 +14,18 @@ import { EXPERTS } from '../lib/experts';
 import { regenerateDiscussion } from '../lib/gemini';
 import { 
   AllNodeData, AppNode, TurnGroupNodeData, 
-  isTurnGroupNode, isPromptNode, isStickyNode 
+  isTurnGroupNode, isPromptNode, isStickyNode,
+  PromptVersion 
 } from '../types/nodes';
+
+export const GEMS_PALETTE = [
+  { main: '#EF4444', pale: '#FEF2F2' }, // Red
+  { main: '#3B82F6', pale: '#EFF6FF' }, // Blue
+  { main: '#8B5CF6', pale: '#F5F3FF' }, // Purple
+  { main: '#10B981', pale: '#ECFDF5' }, // Green
+  { main: '#F59E0B', pale: '#FFFBEB' }, // Orange
+  { main: '#EC4899', pale: '#FDF2F8' }, // Pink
+];
 
 export type AppMode = 'A' | 'B' | 'C' | null;
 
@@ -133,7 +143,15 @@ export const useStore = create<AppState>((set, get) => ({
       id: `text-${Date.now()}`,
       type: 'sticky',
       position: { x: window.innerWidth / 2 - 150, y: window.innerHeight / 2 - 100 },
-      data: { text: '' },
+      data: { 
+        versions: [{
+          id: 'v1',
+          text: '',
+          color: GEMS_PALETTE[0].main,
+          timestamp: Date.now()
+        }],
+        currentVersionId: 'v1'
+      },
     };
 
     const newProject: Project = {
@@ -235,7 +253,15 @@ export const useStore = create<AppState>((set, get) => ({
       id: promptNodeId,
       type: 'promptNode',
       position: { x: newX, y: newY },
-      data: { prompt },
+      data: { 
+        versions: [{
+          id: 'v1',
+          text: prompt,
+          color: GEMS_PALETTE[0].main,
+          timestamp: Date.now()
+        }],
+        currentVersionId: 'v1'
+      },
       selected: true,
     } as AppNode);
 
@@ -259,9 +285,21 @@ export const useStore = create<AppState>((set, get) => ({
   reGenerateFromPrompt: async (promptNodeId: string) => {
     const state = get();
     const promptNode = state.nodes.find((n) => n.id === promptNodeId);
-    if (!promptNode) return;
+    if (!promptNode || !isPromptNode(promptNode)) return;
 
-    // 선행 그룹 노드(부모) 탐색
+    // 1. 현재 선택된 탭 정보 가져오기 혹은 새로운 탭 생성 처리 (레거시 대응)
+    const nodeData = promptNode.data;
+    const versions = nodeData.versions || [{
+      id: 'v1',
+      text: (nodeData as any).prompt || '',
+      color: GEMS_PALETTE[0].main,
+      timestamp: Date.now()
+    }];
+    const currentVersionId = nodeData.currentVersionId || 'v1';
+    const currentVer = versions.find(v => v.id === currentVersionId) || versions[0];
+    if (!currentVer) return;
+
+    // 2. 선행 그룹 노드(부모) 탐색
     const incomingEdge = state.edges.find((e) => e.target === promptNodeId);
     if (!incomingEdge) return;
     const parentNode = state.nodes.find((n) => n.id === incomingEdge.source);
@@ -269,7 +307,7 @@ export const useStore = create<AppState>((set, get) => ({
 
     const prevFinalOutput = parentNode.data.finalOutput ?? '';
     const turn = (parentNode.data.turn ?? 0) + 1;
-    const promptText = isPromptNode(promptNode) ? promptNode.data.prompt : '';
+    const promptText = currentVer.text;
 
     state.setIsGenerating(true);
     try {
@@ -280,8 +318,11 @@ export const useStore = create<AppState>((set, get) => ({
       );
 
       const newGroupId = `node-group-regen-${Date.now()}`;
-      const newX = promptNode.position.x + 350; // 프롬프트 노드 우측에 생성
+      const newX = promptNode.position.x + 350;
       const newY = promptNode.position.y;
+
+      // 3. 탭 컬러 결정 및 주입
+      const versionColor = currentVer.color;
 
       state.addNode({
         id: newGroupId,
@@ -298,6 +339,7 @@ export const useStore = create<AppState>((set, get) => ({
           shortFinalOutput: reResult.shortFinalOutput,
           finalOutput: reResult.finalOutput,
           transparencyReport: reResult.transparencyReport,
+          versionColor, // 탭 색상 상속
         },
       } as AppNode);
 
@@ -306,7 +348,25 @@ export const useStore = create<AppState>((set, get) => ({
         target: newGroupId,
         sourceHandle: null,
         targetHandle: null,
-      });
+        data: { protocol: 'dialectic', color: versionColor }
+      } as any);
+
+      // 4. Generate 성공 시 새로운 탭 자동 생성 (최대 6개)
+      if (nodeData.versions.length < 6) {
+        const nextIndex = nodeData.versions.length;
+        const newVerId = `v-${Date.now()}`;
+        const newVersion: PromptVersion = {
+          id: newVerId,
+          text: currentVer.text, // 이전 텍스트 복사
+          color: GEMS_PALETTE[nextIndex].main,
+          timestamp: Date.now()
+        };
+        
+        get().updateNodeData(promptNodeId, {
+          versions: [...nodeData.versions, newVersion],
+          currentVersionId: newVerId
+        });
+      }
     } catch (e) {
       console.error('Re-generate 실패:', e);
       alert('재생성에 실패했습니다. 다시 시도해주세요.');
