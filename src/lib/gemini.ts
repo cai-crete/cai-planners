@@ -280,11 +280,14 @@ ${context}
     str.replace(/#/g, '').replace(/\\n/g, ' ').replace(/\\r/g, ' ').replace(/[\n\r]/g, ' ').split(/\s+/).filter(Boolean);
 
   const handleChunk = (text: string) => {
-    const squadRaw = extract(text, 'SQUAD');
-    if (squadRaw) {
-      const rawIds = squadRaw.split(',').map(id => id.trim());
-      // 방어 로직 (Fallback): 중복 제거 확실화 및 모자랄 시 채움
-      const parsedIds = Array.from(new Set(rawIds));
+    // 1. SQUAD 추출 및 판정 로직
+    const squadMatch = text.match(/\[\[SQUAD\]\]([\s\S]*?)(\[\[|$)/i);
+    const squadRaw = squadMatch ? squadMatch[1].trim() : '';
+    const isSquadComplete = squadMatch && squadMatch[2].startsWith('[[');
+
+    if (squadRaw && (!squadApplied || isSquadComplete)) {
+      const rawIds = squadRaw.split(',').map(id => id.trim()).filter(id => id.length > 0);
+      const parsedIds = Array.from(new Set(rawIds)).filter(id => EXPERTS.some(e => e.id === id));
       const ids = [...parsedIds];
       
       let attempt = 0;
@@ -303,7 +306,14 @@ ${context}
       }
 
       currentSquadIds = ids;
-      if (!squadApplied && callbacks?.onSquadSelected) {
+      
+      const newSquadStr = ids.join(',');
+      const isSquadChanged = newSquadStr !== (callbacks as any)?.lastSquadStr;
+
+      if ((!squadApplied || isSquadChanged) && callbacks?.onSquadSelected) {
+        (callbacks as any).lastSquadStr = newSquadStr;
+        // [핵심 버그 수정] isSquadComplete 잠금을 해제하고, 즉시 UI를 업데이트합니다.
+        // useStore의 깊은 병합(Deep Merge) 기능 덕분에 텍스트가 덮어씌워지는 오류가 시스템적으로 차단됩니다.
         // [BUG FIX] 화면이 요구하는 ExpertTurnData 하위 규격으로 맞춰서 전달
         callbacks.onSquadSelected({
           thesis: { expertId: ids[0], role: 'thesis', shortContent: '', fullContent: '', keywords: [] },

@@ -138,12 +138,7 @@ export const RightPanel = memo(() => {
       return;
     }
     
-    setIsGenerating(true);
-    setRightPanelWidth(window.innerWidth * 0.5);
-    useStore.getState().setRightPanelOpen(true);
-    
-    const currentTurn = generationTurn + 1;
-    const groupId = `node-group-${generateId()}`;
+    const promptNodeId = `node-prompt-${generateId()}`;
     const cx = window.innerWidth / 2;
     const cy = window.innerHeight / 2 - 100;
 
@@ -152,42 +147,29 @@ export const RightPanel = memo(() => {
       useStore.getState().nodes.map(n => ({ ...n, selected: false }))
     );
 
-    // 즉시 노드 생성 (스트리밍 버퍼 역할)
-    addNode({
-      id: groupId,
-      type: 'turnGroup',
-      position: { x: cx - 480, y: cy },
-      loading: true,
-      selected: true,
+    useStore.getState().addNode({
+      id: promptNodeId,
+      type: 'sticky',
+      position: { x: cx - 400, y: cy },
       data: {
-        turn: currentTurn,
-        versionColor: INITIAL_GRAY,
+        text: '', 
+        versions: [{
+          id: 'v1',
+          text: dashboardNote,
+          color: INITIAL_GRAY, 
+          timestamp: Date.now()
+        }],
+        currentVersionId: 'v1'
       },
+      selected: true,
     } as any);
 
-    // 즉시 생성된 노드를 포커싱하여 우측 패널에 스트리밍 로그가 보이게 함
-    setSelectedNodeId(groupId);
+    useStore.getState().setSelectedNodeId(promptNodeId);
+    setDashboardNote('');
 
-    try {
-      const result = await generateDiscussion(dashboardNote, currentMode, selectedExpertIds, {
-        onSquadSelected: (squad) => {
-          useStore.getState().updateNodeData(groupId, { ...squad });
-        },
-        onStreamChunk: (partial) => {
-          useStore.getState().updateNodeData(groupId, { ...partial });
-        }
-      });
-      
-      useStore.getState().updateNodeData(groupId, { ...result, loading: false });
-      setGenerationTurn(currentTurn);
-      setDashboardNote('');
-    } catch (error) {
-      console.error('Generation failed:', error);
-      useStore.getState().deleteNode(groupId);
-      alert('생성에 실패했습니다.');
-    } finally {
-      setIsGenerating(false);
-    }
+    setTimeout(() => {
+      useStore.getState().reGenerateFromPrompt(promptNodeId);
+    }, 100);
   };
 
   const isModified = stickyFullText !== undefined && editedText !== stickyFullText;

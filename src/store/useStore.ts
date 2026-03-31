@@ -34,7 +34,7 @@ export const GEMS_PALETTE = [
   { main: '#EC4899', pale: '#FDF2F8' }, // Pink
 ];
 
-export const INITIAL_GRAY = '#64748B';
+export const INITIAL_GRAY = '#9CA3AF'; // Pure gray to prevent 'blue line' perception
 export const LEGACY_RED   = '#EF4444';
 
 export type AppMode = 'A' | 'B' | 'C' | null;
@@ -90,7 +90,7 @@ interface AppState {
   // ─── 중앙 관리소: Re-generate 전용 액션 ───
   createPromptAndRegenerate: (sourceNodeId: string, prompt: string) => Promise<void>;
   reGenerateFromPrompt: (promptNodeId: string) => Promise<void>;
-  combineAndGenerateVCS: (sourceIds: string[], customPrompt?: string) => Promise<void>;
+  combineAndGenerateVCS: (sourceIds: string[], customPrompt?: string, forcedVersionColor?: string) => Promise<void>;
   updatePromptTextWithBranching: (nodeId: string, versionId: string, newText: string) => void;
   deleteNode: (id: string) => void;
   deleteNodes: (ids: string[]) => void;
@@ -129,7 +129,10 @@ export const useStore = create<AppState>((set, get) => ({
       ...connection,
       id: `e-${generateId()}`,
       type: 'protocolEdge',
-      data: { protocol: 'evolution', color: edgeColor }
+      data: { 
+        protocol: (connection as any).data?.protocol || 'evolution', 
+        color: (connection as any).data?.color || edgeColor 
+      }
     };
     set({
       edges: addEdge(newEdge as Edge, get().edges),
@@ -144,9 +147,23 @@ export const useStore = create<AppState>((set, get) => ({
   },
   updateNodeData: (id, data) => {
     set({
-      nodes: get().nodes.map((node) =>
-        node.id === id ? { ...node, data: { ...node.data, ...data } } : node
-      ),
+      nodes: get().nodes.map((node) => {
+        if (node.id === id) {
+          if (isTurnGroupNode(node) || node.type === 'turnGroup') {
+            const curData = node.data as any;
+            const newData = data as any;
+            const merged = { ...curData, ...newData };
+            ['thesis', 'antithesis', 'synthesis', 'support'].forEach(r => {
+              if (curData[r] && newData[r]) {
+                merged[r] = { ...curData[r], ...newData[r] };
+              }
+            });
+            return { ...node, data: merged };
+          }
+          return { ...node, data: { ...node.data, ...data } };
+        }
+        return node;
+      }),
     });
     get().saveCurrentProject();
   },
@@ -333,7 +350,7 @@ export const useStore = create<AppState>((set, get) => ({
         versions: [{
           id: 'v1',
           text: '',
-          color: GEMS_PALETTE[0].main,
+          color: INITIAL_GRAY,
           timestamp: Date.now()
         }],
         currentVersionId: 'v1'
@@ -523,15 +540,22 @@ export const useStore = create<AppState>((set, get) => ({
     }
 
     const incomingEdge = state.edges.find((e) => e.target === promptNodeId);
-    // [BUG FIX] TEXT 노드 단독 배치 후 GENERATE 시 부모가 없으므로 combineAndGenerateVCS로 Fallback
-    if (!incomingEdge) {
-      return state.combineAndGenerateVCS([promptNodeId]);
-    }
-    const parentNode = state.nodes.find((n) => n.id === incomingEdge.source);
-    if (!parentNode || !isTurnGroupNode(parentNode)) return;
+    const parentNode = incomingEdge ? state.nodes.find((n) => n.id === incomingEdge.source) : undefined;
+    
+    let isRootOrMemo = false;
+    let prevFinalOutput = '';
 
-    const prevFinalOutput = parentNode.data.finalOutput ?? '';
-    const turn = (parentNode.data.turn ?? 0) + 1;
+    if (!incomingEdge) {
+      isRootOrMemo = true;
+    } else if (parentNode && !isTurnGroupNode(parentNode)) {
+      isRootOrMemo = true;
+    } else if (parentNode && isTurnGroupNode(parentNode)) {
+      prevFinalOutput = parentNode.data.finalOutput ?? '';
+    } else {
+      return;
+    }
+
+    const turn = isRootOrMemo ? 1 : ((parentNode?.data as any)?.turn ?? 0) + 1;
     const promptText = targetVersion.text;
 
     state.setIsGenerating(true);
@@ -570,22 +594,42 @@ export const useStore = create<AppState>((set, get) => ({
     state.setSelectedNodeId(newGroupId);
 
     try {
-      await regenerateDiscussion(
-        prevFinalOutput,
-        promptText,
-        state.currentMode,
-        state.selectedExpertIds,
-        {
-          onSquadSelected: (squad) => {
-            state.updateNodeData(newGroupId, { ...squad });
-          },
-          onStreamChunk: (partial) => {
-            state.updateNodeData(newGroupId, { ...partial });
+      if (isRootOrMemo) {
+        await generateDiscussion(
+          promptText,
+          state.currentMode || 'A',
+          state.selectedExpertIds,
+          {
+            onSquadSelected: (squad) => {
+              state.updateNodeData(newGroupId, { ...squad });
+            },
+            onStreamChunk: (partial) => {
+              state.updateNodeData(newGroupId, { ...partial });
+            }
           }
-        }
-      ).then(fullResult => {
-        state.updateNodeData(newGroupId, { ...fullResult, loading: false });
-      });
+        ).then(fullResult => {
+          state.updateNodeData(newGroupId, { ...fullResult, loading: false });
+          state.setGenerationTurn(turn);
+        });
+      } else {
+        await regenerateDiscussion(
+          prevFinalOutput,
+          promptText,
+          state.currentMode,
+          state.selectedExpertIds,
+          {
+            onSquadSelected: (squad) => {
+              state.updateNodeData(newGroupId, { ...squad });
+            },
+            onStreamChunk: (partial) => {
+              state.updateNodeData(newGroupId, { ...partial });
+            }
+          }
+        ).then(fullResult => {
+          state.updateNodeData(newGroupId, { ...fullResult, loading: false });
+          state.setGenerationTurn(turn);
+        });
+      }
     } catch (e) {
       console.error('Re-generate 실패:', e);
       state.deleteNode(newGroupId);
@@ -595,7 +639,7 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  combineAndGenerateVCS: async (sourceIds: string[], customPrompt?: string) => {
+  combineAndGenerateVCS: async (sourceIds: string[], customPrompt?: string, forcedVersionColor?: string) => {
     const state = get();
     if (sourceIds.length === 0) return;
 
@@ -626,7 +670,7 @@ export const useStore = create<AppState>((set, get) => ({
       return `[Source ${index + 1} - ${typeLabel}]\n${content}`;
     });
 
-    const aggregatedPrompt = `[통합 안건 — 다중 노드 결합 결론 도출]\n\n${aggregatedParts.join('\n\n')}\n\n---\n[추가 지시사항]\n${customPrompt || '위 소스들을 종합하여 최적의 전략을 도출하십시오.'}`;
+    const aggregatedPrompt = `[통합 안건 — 다중 노드 결합 결론 도출]\n\n${aggregatedParts.join('\n\n')}\n\n---\n[추가 지시사항]\n${customPrompt || '위 소스들을 종합하여 안건을 심층 분석하십시오. **반드시 첫 줄에 [[SQUAD]] 태그부터 시작하는 GEMS 프로토콜의 모든 출력 태그 규칙을 예외 없이 엄격하게 준수하여 토론을 진행해야 합니다.**'}`;
 
     // 2. 결과 노드(TurnGroupNode) 생성 위치 계산 (첫 번째 노드 기준 우측)
     const firstNode = state.nodes.find(n => n.id === sourceIds[0]);
@@ -635,7 +679,7 @@ export const useStore = create<AppState>((set, get) => ({
       : { x: 500, y: 500 };
 
     const newGroupId = `node-group-combined-${generateId()}`;
-    const versionColor = INITIAL_GRAY;
+    const versionColor = forcedVersionColor || INITIAL_GRAY;
 
     // [BUG FIX] DOM 네이티브 포커싱 및 기존 선택 해제
     state.setNodes(state.nodes.map(n => ({ ...n, selected: false })));
