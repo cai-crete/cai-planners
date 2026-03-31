@@ -10,22 +10,23 @@ import {
   ReactFlowProvider,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import { Settings } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import { StickyNode } from './nodes/StickyNode';
+
 import { DiscussionNode } from './nodes/DiscussionNode';
 import { LeftPanel } from './LeftPanel';
 import { RightPanel } from './RightPanel';
 import { TurnGroupNode } from './nodes/TurnGroupNode';
-import { PromptNode } from './nodes/PromptNode';
 import { SynapseNode } from './nodes/SynapseNode';
 import { ProtocolEdge } from './edges/ProtocolEdge';
 import { AppNode } from '../types/nodes';
 
 const nodeTypes = {
   sticky: StickyNode,
-  discussion: DiscussionNode,
   turnGroup: TurnGroupNode,
-  promptNode: PromptNode,
+  promptNode: StickyNode, // [HOTFIX] 레거시 DB(IndexedDB) promptNode 호환 맵핑
+  discussion: DiscussionNode,
   synapseNode: SynapseNode,
 };
 
@@ -43,12 +44,29 @@ function Flow() {
     setSelectedNodeId,
     setSelectedNodeIds,
     setRightPanelOpen,
+    isRightPanelOpen,
     deleteNodes,
     isGenerating,
     toolMode,
+    selectedNodeId,
   } = useStore();
   
-  const { fitView, setCenter } = useReactFlow();
+  const { fitView, setCenter, getZoom } = useReactFlow();
+
+  // [NEW] Generate 시작 시 1회성 화면 정렬 (화면 50%를 덮기 때문에, 포커스된 노드를 왼쪽 공간 중앙에 오도록 합니다.)
+  useEffect(() => {
+    if (isGenerating && selectedNodeId) {
+      const node = nodes.find(n => n.id === selectedNodeId);
+      if (node) {
+        const currentZoom = getZoom() || 1;
+        // x오프셋: 화면 너비의 1/4 / zoom 정도를 더해주어 대상 위치를 가리키게 하여, 결과적으로 노드가 왼쪽 절반의 중앙에 놓이게 함.
+        const targetX = node.position.x + (node.measured?.width || 300) / 2 + (window.innerWidth / 4) / currentZoom;
+        const targetY = node.position.y + (node.measured?.height || 150) / 2;
+        setCenter(targetX, targetY, { zoom: currentZoom, duration: 800 });
+      }
+    }
+  }, [isGenerating]);
+
 
   const handleNodeClick = useCallback((event: React.MouseEvent, node: any) => {
     // Shift 키가 들려있는 경우 React Flow의 기본 다중 선택 로직에 맡김
@@ -105,6 +123,19 @@ function Flow() {
       >
         <Background variant={BackgroundVariant.Lines} gap={20} color="#f2f2f2" lineWidth={1} />
         <Background variant={BackgroundVariant.Lines} gap={100} color="#f2f2f2" lineWidth={1} />
+        
+        {/* [NEW] 톱니바퀴 Settings 버튼 추가 (패널이 닫혀있을 때만 노출) */}
+        {!isRightPanelOpen && (
+          <Panel position="top-right" className="m-4 z-50">
+            <button
+              onClick={() => setRightPanelOpen(true)}
+              className="flex h-10 w-10 items-center justify-center rounded-xl bg-white shadow-md border border-neutral-200 text-neutral-600 hover:bg-neutral-50 hover:text-black transition-all"
+              title="Open Settings Panel"
+            >
+              <Settings className="h-5 w-5" />
+            </button>
+          </Panel>
+        )}
       </ReactFlow>
 
       <LeftPanel />

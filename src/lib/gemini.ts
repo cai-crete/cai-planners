@@ -6,6 +6,7 @@ import {
   EXPERT_SUPPORT_MAP,
   EXPERT_PROFILES_COMPACT,
   MODE_SQUAD_MAP,
+  OPTIMAL_TRIOS_TOP10,
 } from './synergyData';
 
 // API 요청을 자체 백엔드로 프록시하는 헬퍼 함수
@@ -140,9 +141,21 @@ export async function generateDiscussion(
     onStreamChunk?: (partialResult: Partial<DiscussionResult>) => void;
   }
 ): Promise<DiscussionResult> {
-  const getExpert = (id: string) => {
-    const expert = EXPERTS.find((e) => e.id === id);
-    return expert || EXPERTS[0];
+  const getExpert = (idOrName: string) => {
+    const id = idOrName.trim();
+    // 1. ID로 우선 검색
+    let expert = EXPERTS.find((e) => e.id === id);
+    if (expert) return expert;
+
+    // 2. 이름(직업명)으로 검색 (Fallback)
+    expert = EXPERTS.find((e) => e.name === id || e.personaName === id);
+    if (expert) return expert;
+
+    // 3. 정규식으로 대략적인 매칭 (더욱 강력한 Fallback)
+    expert = EXPERTS.find(e => id.includes(e.name) || e.name.includes(id));
+    if (expert) return expert;
+
+    return EXPERTS[0];
   };
 
   const modeLabel: Record<string, string> = {
@@ -154,13 +167,18 @@ export async function generateDiscussion(
   const detectedMode = mode || 'A';
   const availableProfiles = EXPERT_PROFILES_COMPACT.filter(e => selectedExpertIds.includes(e.id));
 
+  const availableProfilesString = availableProfiles.map(p => `- [${p.id}] ${p.role} (${p.keywords.join(', ')})`).join('\n');
+  const optimalTriosString = OPTIMAL_TRIOS_TOP10.map(t => `- ${t.ids.join(' + ')} (시나리오: ${t.scenario})`).join('\n');
+  const synergyPairsString = SYNERGY_MATRIX.slice(0, 5).map(s => `- ${s.pair.join(' + ')} (점수: ${s.score}, ${s.reason})`).join('\n');
+  
   const discussionPrompt = `
 # GEMS Protocol — Active Metacognitive Architect (V4.5)
 
 ## ⚠️ 단일 회전(Single-Turn) 출력 규약
-당신은 별도의 선발 단계 없이, 이 프롬프트 안에서 문맥을 분석하여 최적의 전문가 4인을 즉시 선발하고 토론을 시작해야 합니다.
+당신은 별도의 선발 단계 없이, 이 프롬프트 안에서 문맥을 분석하여 최적의 전문가를 선발해야 합니다.
+반드시 [선택 가능 전문가] 목록의 'id'(예: T01, P04 등)를 사용하여 정확하게 4명(제안자, 반박자, 통합자, 검증자 각 1명)을 선발하십시오. 서로 다른 4명을 선발해야 하며 중복은 절대 금지됩니다.
 출력의 **첫 번째 줄**은 반드시 아래 형식을 지켜야 합니다. (실시간 UI 바인딩용)
-[[SQUAD]] thesisId, antithesisId, synthesisId, supportId
+[[SQUAD]] T01, T05, P02, T08
 
 그 후, 아래 태그들을 순서대로 사용하여 마크다운 스트리밍을 진행하십시오.
 
@@ -224,10 +242,17 @@ export async function generateDiscussion(
 
 ## 전문가 선발 지침 (Internal Selector)
 다음 지식을 활용하여 현 안건에 가장 적합한 4인을 선발하십시오. (어떤 주제든 유연하게 대응하십시오.)
-- **모드별 스쿼드**: ${JSON.stringify(MODE_SQUAD_MAP)}
-- **시너지 매트릭스**: ${JSON.stringify(SYNERGY_MATRIX.slice(0, 5))}
-- **선택 가능 전문가**: ${JSON.stringify(availableProfiles)}
-- **현재 모드**: ${modeLabel[detectedMode] || '범용 탐구 모드'}
+
+**1. 현재 안건 기반 탐구 모드**: ${modeLabel[detectedMode] || '범용 탐구 모드'}
+
+**2. 선택 가능 전문가 목록**:
+${availableProfilesString}
+
+**3. 최적의 3인 시너지 문헌 (Top 10)**:
+${optimalTriosString}
+
+**4. 2인 시너지 매트릭스**:
+${synergyPairsString}
 
 ---
 
@@ -236,7 +261,7 @@ export async function generateDiscussion(
 - **역할 경계 준수**: 제안자/반박자/통합자/검증자의 페르소나를 엄격히 분리하십시오.
 - **SHORT 태그 준수**: 모든 _SHORT 태그는 반드시 1문장, 마크다운 금지, **개행 문자(\n) 완전 금지**를 고수하십시오. 줄바꿈 없이 순수 단일 문장으로만 작성하십시오.
 - **SHORT_FINAL 준수**: [[SHORT_FINAL]]은 반드시 3문장 이내로 작성하십시오. 개행 문자 사용 금지.
-- **전문가 호칭 규칙**: 토론 본문([[THESIS]], [[ANTITHESIS]], [[SYNTHESIS]], [[SUPPORT]], [[FINAL_PLAN]])에서 전문가를 지칭할 때 반드시 **역할명**(예: 혁신 설계자, 인과적 검증자, 통합 조율가 등)을 사용하십시오. T01, T05, T08 같은 ID 코드로 지칭하는 것은 **절대 금지**입니다.
+- **전문가 호칭 규칙**: [[SQUAD]] 태그 줄에서는 무조건 **고유 ID (예: T01, P04)** 만을 나열해야 합니다. 반면 이후의 모든 토론 본문([[THESIS]], [[ANTITHESIS]], [[SYNTHESIS]], [[SUPPORT]], [[FINAL_PLAN]]) 내부에서 전문가를 지칭할 때는 ID 사용을 철저히 금지하고 무조건 **직업명**(예: 전략 컨설턴트, 데이터 과학자)을 사용하십시오.
 
 ---
 
@@ -247,53 +272,78 @@ ${context}
   let squadApplied = false;
   let currentSquadIds: string[] = ['', '', '', ''];
 
+  // 파싱 정제 (Sanitization) 헬퍼
+  const sanitizeShort = (str: string) => 
+    str.replace(/\\n/g, ' ').replace(/\\r/g, ' ').replace(/[\n\r]/g, ' ').replace(/\s+/g, ' ').trim();
+  
+  const sanitizeKeywords = (str: string) => 
+    str.replace(/#/g, '').replace(/\\n/g, ' ').replace(/\\r/g, ' ').replace(/[\n\r]/g, ' ').split(/\s+/).filter(Boolean);
+
   const handleChunk = (text: string) => {
     const squadRaw = extract(text, 'SQUAD');
     if (squadRaw) {
-      const ids = squadRaw.split(',').map(id => id.trim());
-      if (ids.length >= 4) {
-        currentSquadIds = ids;
-        if (!squadApplied && callbacks?.onSquadSelected) {
-          callbacks.onSquadSelected({
-            thesis: getExpert(ids[0]),
-            antithesis: getExpert(ids[1]),
-            synthesis: getExpert(ids[2]),
-            support: getExpert(ids[3])
-          });
-          squadApplied = true;
+      const rawIds = squadRaw.split(',').map(id => id.trim());
+      // 방어 로직 (Fallback): 중복 제거 확실화 및 모자랄 시 채움
+      const parsedIds = Array.from(new Set(rawIds));
+      const ids = [...parsedIds];
+      
+      let attempt = 0;
+      while (ids.length < 4 && attempt < 15) {
+        const candid = availableProfiles[attempt]?.id || EXPERTS[attempt % EXPERTS.length].id;
+        if (!ids.includes(candid)) {
+          ids.push(candid);
         }
+        attempt++;
+      }
+      
+      // 최후 수단 (그래도 4개가 안 되면 안전망으로 EXPERTS 강제 투입)
+      while (ids.length < 4) {
+        const safeE = EXPERTS.find(e => !ids.includes(e.id));
+        if (safeE) ids.push(safeE.id);
+      }
+
+      currentSquadIds = ids;
+      if (!squadApplied && callbacks?.onSquadSelected) {
+        // [BUG FIX] 화면이 요구하는 ExpertTurnData 하위 규격으로 맞춰서 전달
+        callbacks.onSquadSelected({
+          thesis: { expertId: ids[0], role: 'thesis', shortContent: '', fullContent: '', keywords: [] },
+          antithesis: { expertId: ids[1], role: 'antithesis', shortContent: '', fullContent: '', keywords: [] },
+          synthesis: { expertId: ids[2], role: 'synthesis', shortContent: '', fullContent: '', keywords: [] },
+          support: { expertId: ids[3], role: 'support', shortContent: '', fullContent: '', keywords: [] },
+        });
+        squadApplied = true;
       }
     }
 
     if (callbacks?.onStreamChunk) {
       callbacks.onStreamChunk({
-        aggregatedSummary: extract(text, 'SUMMARY'),
-        aggregatedKeywords: extract(text, 'KEYWORDS').replace(/#/g, '').split(' ').map(s => s.trim()).filter(Boolean),
-        shortFinalOutput: extract(text, 'SHORT_FINAL'),
+        aggregatedSummary: sanitizeShort(extract(text, 'SUMMARY')),
+        aggregatedKeywords: sanitizeKeywords(extract(text, 'KEYWORDS')),
+        shortFinalOutput: sanitizeShort(extract(text, 'SHORT_FINAL')),
         // [G2 FIX] _SHORT 태그를 각 전문가의 shortContent로 추출
         thesis: {
-          shortContent: extract(text, 'THESIS_SHORT'),
+          shortContent: sanitizeShort(extract(text, 'THESIS_SHORT')),
           fullContent: extract(text, 'THESIS'),
           expertId: currentSquadIds[0],
           role: 'thesis',
           keywords: [],
         },
         antithesis: {
-          shortContent: extract(text, 'ANTITHESIS_SHORT'),
+          shortContent: sanitizeShort(extract(text, 'ANTITHESIS_SHORT')),
           fullContent: extract(text, 'ANTITHESIS'),
           expertId: currentSquadIds[1],
           role: 'antithesis',
           keywords: [],
         },
         synthesis: {
-          shortContent: extract(text, 'SYNTHESIS_SHORT'),
+          shortContent: sanitizeShort(extract(text, 'SYNTHESIS_SHORT')),
           fullContent: extract(text, 'SYNTHESIS'),
           expertId: currentSquadIds[2],
           role: 'synthesis',
           keywords: [],
         },
         support: {
-          shortContent: extract(text, 'SUPPORT_SHORT'),
+          shortContent: sanitizeShort(extract(text, 'SUPPORT_SHORT')),
           fullContent: extract(text, 'SUPPORT'),
           expertId: currentSquadIds[3],
           role: 'support',
@@ -336,44 +386,60 @@ ${context}
   }
 
   const finalSquadRaw = extract(fullText, 'SQUAD');
-  const finalIds = finalSquadRaw.split(',').map(id => id.trim());
+  const rawParsedIds = finalSquadRaw ? finalSquadRaw.split(',').map(id => id.trim()) : currentSquadIds;
+  const parsedFinalIds = Array.from(new Set(rawParsedIds));
+  const finalIds = [...parsedFinalIds];
+  
+  let finalAttempt = 0;
+  while (finalIds.length < 4 && finalAttempt < 15) {
+    const candid = availableProfiles[finalAttempt]?.id || EXPERTS[finalAttempt % EXPERTS.length].id;
+    if (!finalIds.includes(candid)) {
+      finalIds.push(candid);
+    }
+    finalAttempt++;
+  }
+  
+  while (finalIds.length < 4) {
+    const safeE = EXPERTS.find(e => !finalIds.includes(e.id));
+    if (safeE) finalIds.push(safeE.id);
+  }
 
   return {
-    aggregatedSummary: extract(fullText, 'SUMMARY'),
-    aggregatedKeywords: extract(fullText, 'KEYWORDS').replace(/#/g, '').split(' ').map(s => s.trim()).filter(Boolean),
-    shortFinalOutput: extract(fullText, 'SHORT_FINAL'),
+    aggregatedSummary: sanitizeShort(extract(fullText, 'SUMMARY')),
+    aggregatedKeywords: sanitizeKeywords(extract(fullText, 'KEYWORDS')),
+    shortFinalOutput: sanitizeShort(extract(fullText, 'SHORT_FINAL')),
     metacognitiveDefinition: {
       selectedMode: detectedMode,
-      projectDefinition: extract(fullText, 'METAC_DEF'),
+      projectDefinition: sanitizeShort(extract(fullText, 'METAC_DEF')),
       activeSquadReason: 'GEMS Protocol V4.5 High-Integrity Selection',
     },
-    // [G2 FIX] 최종 결과에도 _SHORT 태그 파싱 적용
+    // [G2 FIX] 최종 결과에도 _SHORT 태그 파싱 적용 및 강제 한 줄 정제
     thesis: {
-      expertId: finalIds[0] || '',
+      expertId: getExpert(finalIds[0] || '').id,
       role: 'thesis',
       keywords: [],
-      shortContent: extract(fullText, 'THESIS_SHORT'),
+      shortContent: sanitizeShort(extract(fullText, 'THESIS_SHORT')),
       fullContent: extract(fullText, 'THESIS'),
     },
     antithesis: {
-      expertId: finalIds[1] || '',
+      expertId: getExpert(finalIds[1] || '').id,
       role: 'antithesis',
       keywords: [],
-      shortContent: extract(fullText, 'ANTITHESIS_SHORT'),
+      shortContent: sanitizeShort(extract(fullText, 'ANTITHESIS_SHORT')),
       fullContent: extract(fullText, 'ANTITHESIS'),
     },
     synthesis: {
-      expertId: finalIds[2] || '',
+      expertId: getExpert(finalIds[2] || '').id,
       role: 'synthesis',
       keywords: [],
-      shortContent: extract(fullText, 'SYNTHESIS_SHORT'),
+      shortContent: sanitizeShort(extract(fullText, 'SYNTHESIS_SHORT')),
       fullContent: extract(fullText, 'SYNTHESIS'),
     },
     support: {
-      expertId: finalIds[3] || '',
+      expertId: getExpert(finalIds[3] || '').id,
       role: 'support',
       keywords: [],
-      shortContent: extract(fullText, 'SUPPORT_SHORT'),
+      shortContent: sanitizeShort(extract(fullText, 'SUPPORT_SHORT')),
       fullContent: extract(fullText, 'SUPPORT'),
     },
     finalOutput: extract(fullText, 'FINAL_PLAN'),

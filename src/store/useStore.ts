@@ -94,6 +94,7 @@ interface AppState {
   updatePromptTextWithBranching: (nodeId: string, versionId: string, newText: string) => void;
   deleteNode: (id: string) => void;
   deleteNodes: (ids: string[]) => void;
+  deletePromptVersion: (nodeId: string, versionId: string) => void;
 }
 
 export const generateId = () => Math.random().toString(36).substring(2, 9);
@@ -196,6 +197,7 @@ export const useStore = create<AppState>((set, get) => ({
       };
 
       state.updateNodeData(nodeId, {
+        text: newText, // [SYNC] Legacy fallback
         versions: [...updatedVersions, newVersion],
         currentVersionId: newVerId
       });
@@ -205,6 +207,7 @@ export const useStore = create<AppState>((set, get) => ({
         v.id === versionId ? { ...v, text: newText } : v
       );
       state.updateNodeData(nodeId, {
+        text: newText, // [SYNC] Legacy fallback
         versions: updatedVersions,
         currentVersionId: versionId
       });
@@ -278,6 +281,41 @@ export const useStore = create<AppState>((set, get) => ({
     
     get().saveCurrentProject();
   },
+  deletePromptVersion: (nodeId, versionId) => {
+    const state = get();
+    const node = state.nodes.find(n => n.id === nodeId);
+    if (!node || !isPromptNode(node)) return;
+
+    const pData = getPromptNodeData(node.data);
+    const versions = pData.versions || [];
+    if (versions.length <= 1) return;
+
+    const versionToDelete = versions.find(v => v.id === versionId);
+    if (!versionToDelete) return;
+
+    const edgesToDelete = state.edges.filter(e =>
+      e.source === nodeId &&
+      ((e.data as any)?.color === versionToDelete.color || (!(e.data as any)?.color && versionToDelete.id === 'v1'))
+    );
+
+    const childNodeIds = edgesToDelete.map(e => e.target);
+    const updatedVersions = versions.filter(v => v.id !== versionId);
+    
+    const newCurrentVersionId = pData.currentVersionId === versionId
+      ? updatedVersions[updatedVersions.length - 1].id
+      : pData.currentVersionId;
+
+    if (childNodeIds.length > 0) {
+      state.deleteNodes(childNodeIds);
+    }
+
+    set({
+      nodes: get().nodes.map(n =>
+        n.id === nodeId ? { ...n, data: { ...n.data, versions: updatedVersions, currentVersionId: newCurrentVersionId } } : n
+      )
+    });
+    get().saveCurrentProject();
+  },
 
   currentProjectId: null,
   projects: [],
@@ -291,6 +329,7 @@ export const useStore = create<AppState>((set, get) => ({
       type: 'sticky',
       position: { x: window.innerWidth / 2 - 150, y: window.innerHeight / 2 - 100 },
       data: { 
+        text: '', // Required by StickyNodeData
         versions: [{
           id: 'v1',
           text: '',
@@ -403,9 +442,10 @@ export const useStore = create<AppState>((set, get) => ({
 
     state.addNode({
       id: promptNodeId,
-      type: 'promptNode',
+      type: 'sticky',
       position: { x: newX, y: newY },
       data: { 
+        text: '', // Required by StickyNodeData
         versions: [{
           id: 'v1',
           text: prompt,
@@ -483,7 +523,10 @@ export const useStore = create<AppState>((set, get) => ({
     }
 
     const incomingEdge = state.edges.find((e) => e.target === promptNodeId);
-    if (!incomingEdge) return;
+    // [BUG FIX] TEXT 노드 단독 배치 후 GENERATE 시 부모가 없으므로 combineAndGenerateVCS로 Fallback
+    if (!incomingEdge) {
+      return state.combineAndGenerateVCS([promptNodeId]);
+    }
     const parentNode = state.nodes.find((n) => n.id === incomingEdge.source);
     if (!parentNode || !isTurnGroupNode(parentNode)) return;
 
@@ -492,8 +535,14 @@ export const useStore = create<AppState>((set, get) => ({
     const promptText = targetVersion.text;
 
     state.setIsGenerating(true);
+    state.setRightPanelWidth(window.innerWidth * 0.5);
+    state.setRightPanelOpen(true);
+    
     const newGroupId = `node-group-regen-${generateId()}`;
     const versionColor = targetVersion.color || INITIAL_GRAY;
+
+    // [BUG FIX] DOM 네이티브 포커싱 유지 및 기존 선택 해제
+    state.setNodes(state.nodes.map(n => ({ ...n, selected: false })));
 
     // Ghost Node 즉시 생성
     state.addNode({
@@ -501,6 +550,7 @@ export const useStore = create<AppState>((set, get) => ({
       type: 'turnGroup',
       position: { x: promptNode.position.x + 350, y: promptNode.position.y },
       loading: true,
+      selected: true,
       data: {
         turn,
         versionColor,
@@ -515,6 +565,9 @@ export const useStore = create<AppState>((set, get) => ({
       targetHandle: null,
       data: { protocol: 'dialectic', color: versionColor }
     } as any);
+
+    // [PLAN: Auto-Select New Node]
+    state.setSelectedNodeId(newGroupId);
 
     try {
       await regenerateDiscussion(
@@ -547,6 +600,8 @@ export const useStore = create<AppState>((set, get) => ({
     if (sourceIds.length === 0) return;
 
     state.setIsGenerating(true);
+    state.setRightPanelWidth(window.innerWidth * 0.5);
+    state.setRightPanelOpen(true);
 
     // 1. 소스 노드들로부터 텍스트 추출 및 취합 (Aggregation Process)
     const aggregatedParts = sourceIds.map((id, index) => {
@@ -556,16 +611,16 @@ export const useStore = create<AppState>((set, get) => ({
       let content = '';
       let typeLabel = '';
       
-      if (isStickyNode(node)) {
-        content = node.data.fullText || node.data.text;
-        typeLabel = 'Sticky Note';
-      } else if (isTurnGroupNode(node)) {
+      if (isTurnGroupNode(node)) {
         content = node.data.finalOutput;
         typeLabel = 'VCS Result';
       } else if (isPromptNode(node)) {
         const pData = getPromptNodeData(node.data);
         content = pData.versions.find(v => v.id === pData.currentVersionId)?.text || '';
         typeLabel = 'Prompt';
+      } else if (isStickyNode(node)) {
+        content = node.data.fullText || node.data.text;
+        typeLabel = 'Sticky Note';
       }
       
       return `[Source ${index + 1} - ${typeLabel}]\n${content}`;
@@ -582,12 +637,16 @@ export const useStore = create<AppState>((set, get) => ({
     const newGroupId = `node-group-combined-${generateId()}`;
     const versionColor = INITIAL_GRAY;
 
+    // [BUG FIX] DOM 네이티브 포커싱 및 기존 선택 해제
+    state.setNodes(state.nodes.map(n => ({ ...n, selected: false })));
+
     // 3. TurnGroupNode 생성 (캔버스에는 중간 노드는 보이지 않음)
     state.addNode({
       id: newGroupId,
       type: 'turnGroup',
       position: spawnPos,
       loading: true,
+      selected: true,
       data: {
         turn: 1,
         versionColor,
@@ -605,6 +664,9 @@ export const useStore = create<AppState>((set, get) => ({
         data: { protocol: 'dialectic', color: versionColor }
       } as any);
     });
+
+    // [PLAN: Auto-Select New Node]
+    state.setSelectedNodeId(newGroupId);
 
     // 5. VCS 토론 실행 (Strict Single-Turn)
     // 단 한 번의 호출로 요약(aggregatedSummary)부터 결론까지 스트리밍합니다.

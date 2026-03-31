@@ -139,37 +139,51 @@ export const RightPanel = memo(() => {
     }
     
     setIsGenerating(true);
+    setRightPanelWidth(window.innerWidth * 0.5);
+    useStore.getState().setRightPanelOpen(true);
+    
+    const currentTurn = generationTurn + 1;
+    const groupId = `node-group-${generateId()}`;
+    const cx = window.innerWidth / 2;
+    const cy = window.innerHeight / 2 - 100;
+
+    // [BUG FIX] DOM 네이티브 포커싱 유지 및 기존 선택 해제
+    useStore.getState().setNodes(
+      useStore.getState().nodes.map(n => ({ ...n, selected: false }))
+    );
+
+    // 즉시 노드 생성 (스트리밍 버퍼 역할)
+    addNode({
+      id: groupId,
+      type: 'turnGroup',
+      position: { x: cx - 480, y: cy },
+      loading: true,
+      selected: true,
+      data: {
+        turn: currentTurn,
+        versionColor: INITIAL_GRAY,
+      },
+    } as any);
+
+    // 즉시 생성된 노드를 포커싱하여 우측 패널에 스트리밍 로그가 보이게 함
+    setSelectedNodeId(groupId);
+
     try {
-      const result = await generateDiscussion(dashboardNote, currentMode, selectedExpertIds);
-      const currentTurn = generationTurn + 1;
-      const groupId = `node-group-${generateId()}`;
-      
-      const cx = window.innerWidth / 2;
-      const cy = window.innerHeight / 2 - 100;
-
-      addNode({
-        id: groupId,
-        type: 'turnGroup',
-        position: { x: cx - 480, y: cy },
-        data: {
-          turn: currentTurn,
-          versionColor: INITIAL_GRAY,
-          thesis: result.thesis,
-          antithesis: result.antithesis,
-          synthesis: result.synthesis,
-          support: result.support,
-          finalOutput: result.finalOutput,
-          shortFinalOutput: result.shortFinalOutput,
-          workflowSimulationLog: result.workflowSimulationLog,
-          metacognitiveDefinition: result.metacognitiveDefinition,
-          transparencyReport: result.transparencyReport,
+      const result = await generateDiscussion(dashboardNote, currentMode, selectedExpertIds, {
+        onSquadSelected: (squad) => {
+          useStore.getState().updateNodeData(groupId, { ...squad });
         },
-      } as any);
-
+        onStreamChunk: (partial) => {
+          useStore.getState().updateNodeData(groupId, { ...partial });
+        }
+      });
+      
+      useStore.getState().updateNodeData(groupId, { ...result, loading: false });
       setGenerationTurn(currentTurn);
       setDashboardNote('');
     } catch (error) {
       console.error('Generation failed:', error);
+      useStore.getState().deleteNode(groupId);
       alert('생성에 실패했습니다.');
     } finally {
       setIsGenerating(false);
@@ -516,9 +530,9 @@ export const RightPanel = memo(() => {
 
                     {/* 요약본 또는 원본 텍스트 노출 */}
                     <div className="text-[12px] leading-relaxed text-neutral-600 font-medium whitespace-pre-wrap max-h-64 overflow-y-auto custom-scrollbar select-text">
-                      {(selectedNode.data as TurnGroupNodeData).aggregatedSummary 
+                      {sanitize((selectedNode.data as TurnGroupNodeData).aggregatedSummary 
                         ? (selectedNode.data as TurnGroupNodeData).aggregatedSummary 
-                        : (selectedNode.data as TurnGroupNodeData).aggregatedPrompt}
+                        : (selectedNode.data as TurnGroupNodeData).aggregatedPrompt)}
                     </div>
                   </div>
                 )}
@@ -574,10 +588,7 @@ export const RightPanel = memo(() => {
                             const node = nodes.find(n => n.id === id);
                             if (!node) return '';
                             let text = '';
-                            if (isStickyNode(node)) {
-                              text = (node.data as StickyNodeData).text;
-                            }
-                            else if (isTurnGroupNode(node)) {
+                            if (isTurnGroupNode(node)) {
                               text = (node.data as TurnGroupNodeData).finalOutput;
                             }
                             else if (isPromptNode(node)) {
@@ -586,6 +597,9 @@ export const RightPanel = memo(() => {
                               const curId = pData.currentVersionId;
                               const currentVer = vers.find(v => v.id === curId) || vers[0];
                               text = currentVer?.text || '';
+                            }
+                            else if (isStickyNode(node)) {
+                              text = (node.data as StickyNodeData).text;
                             }
                             return `[Node: ${node.id}]\n${text}`;
                           }).join('\n\n')

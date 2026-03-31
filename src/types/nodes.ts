@@ -27,6 +27,8 @@ export interface StickyNodeData extends Record<string, unknown> {
   fullText?: string;
   imageUrl?: string;
   isLocked?: boolean;
+  versions?: PromptVersion[]; // [MERGE NEW]
+  currentVersionId?: string;  // [MERGE NEW]
 }
 
 export interface TurnGroupNodeData extends Record<string, unknown> {
@@ -52,10 +54,7 @@ export interface PromptVersion {
   timestamp: number;
 }
 
-export interface PromptNodeData extends Record<string, unknown> {
-  versions: PromptVersion[];
-  currentVersionId: string;
-}
+export type PromptNodeData = StickyNodeData; // Alias for backward compatibility if needed
 
 export type DiscussionType = 'thesis' | 'antithesis' | 'synthesis';
 
@@ -79,7 +78,7 @@ export function isTurnGroupNode(node: AppNode): node is Node<TurnGroupNodeData> 
 }
 
 export function isPromptNode(node: AppNode): node is Node<PromptNodeData> {
-  return node.type === 'promptNode';
+  return node.type === 'promptNode' || node.type === 'sticky';
 }
 
 export function isDiscussionNode(node: AppNode): node is Node<DiscussionNodeData> {
@@ -100,7 +99,7 @@ export function getPromptNodeData(data: AllNodeData): PromptNodeData {
     ? pData.versions as PromptVersion[]
     : [{ 
         id: 'v1', 
-        text: pData.prompt || '', 
+        text: pData.text || pData.prompt || '', 
         color: undefined, 
         timestamp: Date.now() 
       } as PromptVersion];
