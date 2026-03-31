@@ -88,10 +88,10 @@ interface AppState {
   setGenerationTurn: (turn: number) => void;
 
   // ─── 중앙 관리소: Re-generate 전용 액션 ───
-  createPromptAndRegenerate: (sourceNodeId: string, prompt: string) => Promise<void>;
+  createPromptAndRegenerate: (sourceNodeId: string, prompt: string, imageData?: string) => Promise<void>;
   reGenerateFromPrompt: (promptNodeId: string) => Promise<void>;
-  combineAndGenerateVCS: (sourceIds: string[], customPrompt?: string, forcedVersionColor?: string) => Promise<void>;
-  updatePromptTextWithBranching: (nodeId: string, versionId: string, newText: string) => void;
+  combineAndGenerateVCS: (sourceIds: string[], customPrompt?: string, forcedVersionColor?: string, imageData?: string) => Promise<void>;
+  updatePromptTextWithBranching: (nodeId: string, versionId: string, newText: string, imageData?: string) => void;
   deleteNode: (id: string) => void;
   deleteNodes: (ids: string[]) => void;
   deletePromptVersion: (nodeId: string, versionId: string) => void;
@@ -167,7 +167,7 @@ export const useStore = create<AppState>((set, get) => ({
     });
     get().saveCurrentProject();
   },
-  updatePromptTextWithBranching: (nodeId, versionId, newText) => {
+  updatePromptTextWithBranching: (nodeId, versionId, newText, imageData) => {
     const state = get();
     const node = state.nodes.find(n => n.id === nodeId);
     if (!node || !isPromptNode(node)) return;
@@ -210,7 +210,8 @@ export const useStore = create<AppState>((set, get) => ({
         id: newVerId,
         text: newText,
         color: GEMS_PALETTE[nextIndex - 1]?.main || GEMS_PALETTE[0].main, // V2는 Palette[0] (Blue)
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        imageData
       };
 
       state.updateNodeData(nodeId, {
@@ -221,7 +222,7 @@ export const useStore = create<AppState>((set, get) => ({
     } else {
       // 결과가 없거나 분기가 불가능하면 해당 탭의 텍스트만 업데이트
       const updatedVersions = versions.map(v => 
-        v.id === versionId ? { ...v, text: newText } : v
+        v.id === versionId ? { ...v, text: newText, ...(imageData && { imageData }) } : v
       );
       state.updateNodeData(nodeId, {
         text: newText, // [SYNC] Legacy fallback
@@ -447,7 +448,7 @@ export const useStore = create<AppState>((set, get) => ({
   setGenerationTurn: (turn) => set({ generationTurn: turn }),
 
   // ─── 중앙 관리소: Re-generate 전용 액션 구현 ───
-  createPromptAndRegenerate: async (sourceNodeId, prompt) => {
+  createPromptAndRegenerate: async (sourceNodeId, prompt, imageData) => {
     const state = get();
     const sourceNode = state.nodes.find((n) => n.id === sourceNodeId);
     if (!sourceNode) return;
@@ -467,7 +468,8 @@ export const useStore = create<AppState>((set, get) => ({
           id: 'v1',
           text: prompt,
           color: INITIAL_GRAY, // V1은 회색으로 시작
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          imageData
         }],
         currentVersionId: 'v1'
       },
@@ -557,6 +559,7 @@ export const useStore = create<AppState>((set, get) => ({
 
     const turn = isRootOrMemo ? 1 : ((parentNode?.data as any)?.turn ?? 0) + 1;
     const promptText = targetVersion.text;
+    const imageData = targetVersion.imageData;
 
     state.setIsGenerating(true);
     state.setRightPanelWidth(window.innerWidth * 0.5);
@@ -573,11 +576,15 @@ export const useStore = create<AppState>((set, get) => ({
       id: newGroupId,
       type: 'turnGroup',
       position: { x: promptNode.position.x + 350, y: promptNode.position.y },
-      loading: true,
       selected: true,
       data: {
         turn,
         versionColor,
+        loading: true,
+        thesis: { expertId: '', role: 'thesis', shortContent: '', fullContent: '', keywords: [] },
+        antithesis: { expertId: '', role: 'antithesis', shortContent: '', fullContent: '', keywords: [] },
+        synthesis: { expertId: '', role: 'synthesis', shortContent: '', fullContent: '', keywords: [] },
+        support: { expertId: '', role: 'support', shortContent: '', fullContent: '', keywords: [] },
       },
     } as any);
 
@@ -606,7 +613,8 @@ export const useStore = create<AppState>((set, get) => ({
             onStreamChunk: (partial) => {
               state.updateNodeData(newGroupId, { ...partial });
             }
-          }
+          },
+          imageData
         ).then(fullResult => {
           state.updateNodeData(newGroupId, { ...fullResult, loading: false });
           state.setGenerationTurn(turn);
@@ -624,7 +632,8 @@ export const useStore = create<AppState>((set, get) => ({
             onStreamChunk: (partial) => {
               state.updateNodeData(newGroupId, { ...partial });
             }
-          }
+          },
+          imageData
         ).then(fullResult => {
           state.updateNodeData(newGroupId, { ...fullResult, loading: false });
           state.setGenerationTurn(turn);
@@ -689,12 +698,16 @@ export const useStore = create<AppState>((set, get) => ({
       id: newGroupId,
       type: 'turnGroup',
       position: spawnPos,
-      loading: true,
       selected: true,
       data: {
         turn: 1,
         versionColor,
         aggregatedPrompt, // 추출된 원본 텍스트 저장
+        loading: true,
+        thesis: { expertId: '', role: 'thesis', shortContent: '', fullContent: '', keywords: [] },
+        antithesis: { expertId: '', role: 'antithesis', shortContent: '', fullContent: '', keywords: [] },
+        synthesis: { expertId: '', role: 'synthesis', shortContent: '', fullContent: '', keywords: [] },
+        support: { expertId: '', role: 'support', shortContent: '', fullContent: '', keywords: [] },
       },
     } as any);
 

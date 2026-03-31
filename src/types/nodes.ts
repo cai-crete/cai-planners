@@ -52,6 +52,7 @@ export interface PromptVersion {
   text: string;
   color: string;
   timestamp: number;
+  imageData?: string; // [VISION] Base64로 인코딩된 이미지 데이터
 }
 
 export type PromptNodeData = StickyNodeData; // Alias for backward compatibility if needed

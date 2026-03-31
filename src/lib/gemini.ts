@@ -139,7 +139,8 @@ export async function generateDiscussion(
   callbacks?: {
     onSquadSelected?: (squad: { thesis: any; antithesis: any; synthesis: any; support: any }) => void;
     onStreamChunk?: (partialResult: Partial<DiscussionResult>) => void;
-  }
+  },
+  imageData?: string // [VISION]
 ): Promise<DiscussionResult> {
   const getExpert = (idOrName: string) => {
     const id = idOrName.trim();
@@ -229,14 +230,14 @@ export async function generateDiscussion(
 [[FINAL_PLAN]]
 상세 의견서 본문: 위계와 글머리 기호가 살아있는 정식 마크다운 문서.
 반드시 아래 구조를 포함하십시오:
-### 8.1 [Metacognitive Definition]
-### 8.2 [Workflow Simulation Log]
-### 8.3 [Final Output: 통합 전략 기획서]
+### Final Output: 통합 전략 기획서
 #### 1. Executive Summary
 #### 2. Strategic Layer
 #### 3. Tactical Layer
 #### 4. Execution & Risk
-### 8.4 [Metacognitive Transparency Report]
+### Metacognitive Definition
+### Workflow Simulation Log
+### Metacognitive Transparency Report
 
 ---
 
@@ -290,19 +291,22 @@ ${context}
       const parsedIds = Array.from(new Set(rawIds)).filter(id => EXPERTS.some(e => e.id === id));
       const ids = [...parsedIds];
       
-      let attempt = 0;
-      while (ids.length < 4 && attempt < 15) {
-        const candid = availableProfiles[attempt]?.id || EXPERTS[attempt % EXPERTS.length].id;
-        if (!ids.includes(candid)) {
-          ids.push(candid);
+      // [UX FIX] 스트리밍 진행 중(incomplete)일 때는 빈 칸을 유지하도록 냅둡니다.
+      // SQUAD 태그가 완전히 닫혔을 때만 4개가 안 차면 Fallback 투입.
+      if (isSquadComplete) {
+        let attempt = 0;
+        while (ids.length < 4 && attempt < 15) {
+          const candid = availableProfiles[attempt]?.id || EXPERTS[attempt % EXPERTS.length].id;
+          if (!ids.includes(candid)) {
+            ids.push(candid);
+          }
+          attempt++;
         }
-        attempt++;
-      }
-      
-      // 최후 수단 (그래도 4개가 안 되면 안전망으로 EXPERTS 강제 투입)
-      while (ids.length < 4) {
-        const safeE = EXPERTS.find(e => !ids.includes(e.id));
-        if (safeE) ids.push(safeE.id);
+        
+        while (ids.length < 4) {
+          const safeE = EXPERTS.find(e => !ids.includes(e.id));
+          if (safeE) ids.push(safeE.id);
+        }
       }
 
       currentSquadIds = ids;
@@ -316,10 +320,10 @@ ${context}
         // useStore의 깊은 병합(Deep Merge) 기능 덕분에 텍스트가 덮어씌워지는 오류가 시스템적으로 차단됩니다.
         // [BUG FIX] 화면이 요구하는 ExpertTurnData 하위 규격으로 맞춰서 전달
         callbacks.onSquadSelected({
-          thesis: { expertId: ids[0], role: 'thesis', shortContent: '', fullContent: '', keywords: [] },
-          antithesis: { expertId: ids[1], role: 'antithesis', shortContent: '', fullContent: '', keywords: [] },
-          synthesis: { expertId: ids[2], role: 'synthesis', shortContent: '', fullContent: '', keywords: [] },
-          support: { expertId: ids[3], role: 'support', shortContent: '', fullContent: '', keywords: [] },
+          thesis: { expertId: ids[0] || '', role: 'thesis', shortContent: '', fullContent: '', keywords: [] },
+          antithesis: { expertId: ids[1] || '', role: 'antithesis', shortContent: '', fullContent: '', keywords: [] },
+          synthesis: { expertId: ids[2] || '', role: 'synthesis', shortContent: '', fullContent: '', keywords: [] },
+          support: { expertId: ids[3] || '', role: 'support', shortContent: '', fullContent: '', keywords: [] },
         });
         squadApplied = true;
       }
@@ -334,28 +338,28 @@ ${context}
         thesis: {
           shortContent: sanitizeShort(extract(text, 'THESIS_SHORT')),
           fullContent: extract(text, 'THESIS'),
-          expertId: currentSquadIds[0],
+          expertId: currentSquadIds[0] || '',
           role: 'thesis',
           keywords: [],
         },
         antithesis: {
           shortContent: sanitizeShort(extract(text, 'ANTITHESIS_SHORT')),
           fullContent: extract(text, 'ANTITHESIS'),
-          expertId: currentSquadIds[1],
+          expertId: currentSquadIds[1] || '',
           role: 'antithesis',
           keywords: [],
         },
         synthesis: {
           shortContent: sanitizeShort(extract(text, 'SYNTHESIS_SHORT')),
           fullContent: extract(text, 'SYNTHESIS'),
-          expertId: currentSquadIds[2],
+          expertId: currentSquadIds[2] || '',
           role: 'synthesis',
           keywords: [],
         },
         support: {
           shortContent: sanitizeShort(extract(text, 'SUPPORT_SHORT')),
           fullContent: extract(text, 'SUPPORT'),
-          expertId: currentSquadIds[3],
+          expertId: currentSquadIds[3] || '',
           role: 'support',
           keywords: [],
         },
@@ -366,10 +370,17 @@ ${context}
 
   // 토론 생성: 고밀도 출력이 필요하므로 MODEL_ANALYSIS (Pro) 사용
   const config = { temperature: 0.75, topP: 0.95 };
+  
+  // [VISION] imageData 유무에 따른 페이로드 구조 분기
+  const contentsPayload = imageData ? [
+    { text: discussionPrompt },
+    { inlineData: { mimeType: 'image/jpeg', data: imageData.replace(/^data:image\/(png|jpeg|webp);base64,/, '') } }
+  ] : discussionPrompt;
+
   let fullText = '';
   try {
     fullText = await callGeminiStreamingApi(
-      { model: MODEL_ANALYSIS, contents: discussionPrompt, config },
+      { model: MODEL_ANALYSIS, contents: contentsPayload, config },
       handleChunk
     );
   } catch (err) {
@@ -378,7 +389,7 @@ ${context}
     try {
       console.warn('[GEMS] Pro 모델 실패. Flash 모델로 폴백...');
       fullText = await callGeminiStreamingApi(
-        { model: MODEL_FLASH, contents: discussionPrompt, config },
+        { model: MODEL_FLASH, contents: contentsPayload, config },
         handleChunk
       );
     } catch (flashErr) {
@@ -386,7 +397,7 @@ ${context}
       try {
         console.warn('[GEMS] Flash 모델 실패. 최종 폴백...');
         fullText = await callGeminiStreamingApi(
-          { model: MODEL_FALLBACK, contents: discussionPrompt, config },
+          { model: MODEL_FALLBACK, contents: contentsPayload, config },
           handleChunk
         );
       } catch (fallbackErr) {
@@ -472,7 +483,8 @@ export async function regenerateDiscussion(
   callbacks?: {
     onSquadSelected?: (squad: { thesis: any; antithesis: any; synthesis: any; support: any }) => void;
     onStreamChunk?: (partialResult: Partial<DiscussionResult>) => void;
-  }
+  },
+  imageData?: string // [VISION]
 ): Promise<DiscussionResult> {
   const enrichedContext = `
 [이전 토론의 최종 기획서]
@@ -481,7 +493,7 @@ ${prevFinalOutput}
 [사용자의 새로운 지시사항 / 피드백]
 ${newPrompt}
   `.trim();
-  return generateDiscussion(enrichedContext, mode, selectedExpertIds, callbacks);
+  return generateDiscussion(enrichedContext, mode, selectedExpertIds, callbacks, imageData);
 }
 
 /** 프롬프트 확장 — 분석·요약 특성상 Flash 모델 사용 */

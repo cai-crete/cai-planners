@@ -26,6 +26,28 @@ const IconMap: Record<string, any> = {
   History, Target, Cpu, PenTool, Box, Scale
 };
 
+const MARKDOWN_CLASSES = "compact-markdown prose prose-neutral max-w-none text-black select-text whitespace-normal [&_h1]:text-[17px] [&_h1]:font-black [&_h1]:pb-3 [&_h1]:border-b-2 [&_h1]:border-black [&_h1]:mb-6 [&_h2]:text-[15px] [&_h2]:font-black [&_h2]:flex [&_h2]:items-center [&_h2]:gap-2 before:[&_h2]:content-['■'] before:[&_h2]:text-black before:[&_h2]:text-[11px] [&_h2]:mt-8 [&_h2]:mb-4 [&_h3]:text-[14px] [&_h3]:font-black [&_h3]:pl-4 [&_h3]:border-l-4 [&_h3]:border-black [&_h3]:mt-6 [&_h3]:mb-4 [&_h4]:text-[14px] [&_h4]:font-black [&_h4]:text-black [&_h4]:mt-6 [&_h4]:mb-3 [&_h4]:flex [&_h4]:items-center [&_h4]:gap-1.5 before:[&_h4]:content-['▸'] before:[&_h4]:text-black [&_p]:text-[12.5px] [&_p]:leading-[2.2] [&_p]:text-neutral-800 [&_p]:font-medium [&_p]:mb-4 [&_strong]:font-black [&_strong]:text-black [&_strong]:underline [&_strong]:decoration-neutral-300 [&_strong]:underline-offset-4 [&_ul]:list-disc [&_ul]:marker:text-black [&_ul]:pl-5 [&_ul]:mb-4 [&_ol]:list-decimal [&_ol]:marker:font-black [&_ol]:pl-5 [&_ol]:mb-4 [&_li]:text-[12.5px] [&_li]:leading-[2.2] [&_li]:text-neutral-800 [&_li]:mb-1 [&_blockquote]:border-l-4 [&_blockquote]:border-black [&_blockquote]:bg-neutral-50 [&_blockquote]:px-5 [&_blockquote]:py-4 [&_blockquote]:italic [&_blockquote]:rounded-r-lg [&_blockquote]:mb-4 [&_hr]:my-8 [&_hr]:border-neutral-200";
+
+const reorderLegacyFinalOutput = (text: string) => {
+  if (!text) return '';
+  // Check if it's already properly ordered (Final Output is near top)
+  if (/^\s*(###\s*)?(Final Output)/i.test(text)) return text;
+  
+  const metaDef = text.match(/###\s*Metacognitive Definition[\s\S]*?(?=###|$)/i);
+  const workflow = text.match(/###\s*Workflow Simulation Log[\s\S]*?(?=###|$)/i);
+  const finalOut = text.match(/###\s*Final Output[\s\S]*?(?=###\s*Metacognitive Transparency Report|###\s*Metacognitive Definition|$)/i);
+  const transparency = text.match(/###\s*Metacognitive Transparency Report[\s\S]*?(?=###|$)/i);
+  
+  if (!finalOut) return text; // Fallback
+  
+  return [
+    finalOut[0],
+    metaDef ? metaDef[0] : '',
+    workflow ? workflow[0] : '',
+    transparency ? transparency[0] : ''
+  ].filter(Boolean).join('\n\n');
+};
+
 export const RightPanel = memo(() => {
   const {
     isRightPanelOpen,
@@ -308,18 +330,18 @@ export const RightPanel = memo(() => {
           </div>
 
           <div className="space-y-4 pt-2">
-             <h3 className="text-[10px] font-black text-black uppercase tracking-[0.2em] flex items-center gap-2">
-               <Check className="h-4 w-4 bg-black text-white rounded p-0.5" /> 8.3 Final Strategic Output
+             <h3 className="text-[10px] font-black text-neutral-400 uppercase tracking-widest pl-1">
+               Final Strategic Output
              </h3>
-              <div className="compact-markdown prose prose-neutral max-w-none text-black select-text whitespace-normal [&_h1]:text-[16px] [&_h1]:font-black [&_h1]:pb-2 [&_h1]:border-b-2 [&_h1]:border-black [&_h2]:text-[14px] [&_h2]:font-black [&_h2]:flex [&_h2]:items-center [&_h2]:gap-2 before:[&_h2]:content-['■'] before:[&_h2]:text-black before:[&_h2]:text-[10px] [&_h3]:text-[13px] [&_h3]:font-black [&_h3]:pl-4 [&_h3]:border-l-4 [&_h3]:border-neutral-900 [&_p]:text-[12px] [&_p]:leading-[1.8] [&_p]:text-neutral-900 [&_p]:font-medium [&_strong]:font-black [&_strong]:text-black [&_strong]:underline [&_strong]:decoration-neutral-300 [&_strong]:underline-offset-4 [&_ul]:list-disc [&_ul]:marker:text-black [&_ol]:list-decimal [&_ol]:marker:font-black [&_li]:text-[12px] [&_li]:leading-[1.8] [&_li]:text-neutral-900 [&_blockquote]:border-l-4 [&_blockquote]:border-black [&_blockquote]:bg-neutral-50 [&_blockquote]:px-5 [&_blockquote]:py-4 [&_blockquote]:italic [&_blockquote]:rounded-r-lg [&_hr]:my-8 [&_hr]:border-neutral-300">
-                <Markdown>{sanitize(data.finalOutput || '')}</Markdown>
+              <div className={MARKDOWN_CLASSES}>
+                <Markdown>{reorderLegacyFinalOutput(sanitize(data.finalOutput || '')).replace(/###\s*8\.\d\s*\[?([^\]\n]+)\]?/g, '### $1').replace(/8\.\d\s*\[?([^\]\n]+)\]?/g, '$1')}</Markdown>
               </div>
           </div>
 
           {data.transparencyReport && (
             <div className="space-y-4 pt-6 border-t border-neutral-100">
-              <h3 className="text-[10px] font-black text-black uppercase tracking-[0.2em] flex items-center gap-2">
-               <Shield className="h-4 w-4 bg-black text-white rounded p-0.5" /> 8.4 Metacognitive Transparency
+              <h3 className="text-[10px] font-black text-neutral-400 uppercase tracking-widest pl-1">
+               Metacognitive Transparency
               </h3>
               <ul className="mb-2 pl-5 list-disc marker:text-black">
                 <li className="text-[12px] leading-[1.8] mb-1 text-neutral-900">
@@ -342,7 +364,8 @@ export const RightPanel = memo(() => {
         <div className="pt-6 border-t border-neutral-100">
           <button
             onClick={() => {
-              const fullTextContent = `[8.2 Log]\n${data.workflowSimulationLog}\n\n[Debate]\n${roles.map(r => `[${EXPERTS.find(e => e.id === data[r]?.expertId)?.name}] ${data[r]?.fullContent}`).join('\n\n')}\n\n[8.3 Output]\n${data.finalOutput}`.trim();
+              const cleanedFinalOutput = (data.finalOutput || '').replace(/###\s*8\.\d\s*\[?([^\]\n]+)\]?/g, '### $1').replace(/8\.\d\s*\[?([^\]\n]+)\]?/g, '$1');
+              const fullTextContent = `[Log]\n${data.workflowSimulationLog}\n\n[Debate]\n${roles.map(r => `[${EXPERTS.find(e => e.id === data[r]?.expertId)?.name}] ${data[r]?.fullContent}`).join('\n\n')}\n\n[Output]\n${cleanedFinalOutput}`.trim();
               navigator.clipboard.writeText(fullTextContent);
             }}
             className="w-full flex items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white px-4 py-3 text-[12px] font-black text-black hover:bg-neutral-50 transition-all shadow-sm active:scale-[0.98]"
@@ -362,9 +385,40 @@ export const RightPanel = memo(() => {
       <div className="flex flex-col bg-white">
         <div className="space-y-4">
           <div className="space-y-2">
-            <div className="compact-markdown prose prose-neutral max-w-none text-black select-text whitespace-normal [&_h1]:text-[15px] [&_h1]:font-black [&_h1]:pb-2 [&_h1]:border-b-2 [&_h1]:border-black [&_h2]:text-[13px] [&_h2]:font-black [&_h2]:flex [&_h2]:items-center [&_h2]:gap-2 before:[&_h2]:content-['■'] before:[&_h2]:text-black before:[&_h2]:text-[10px] [&_h3]:text-[12px] [&_h3]:font-black [&_h3]:pl-4 [&_h3]:border-l-4 [&_h3]:border-neutral-900 [&_p]:text-[12px] [&_p]:leading-[1.8] [&_p]:text-neutral-900 [&_p]:font-medium [&_strong]:font-black [&_strong]:text-black [&_strong]:underline [&_strong]:decoration-neutral-300 [&_strong]:underline-offset-4 [&_ul]:list-disc [&_ul]:marker:text-black [&_ol]:list-decimal [&_ol]:marker:font-black [&_li]:text-[12px] [&_li]:leading-[1.8] [&_li]:text-neutral-900 [&_blockquote]:border-l-4 [&_blockquote]:border-black [&_blockquote]:bg-neutral-50 [&_blockquote]:px-4 [&_blockquote]:py-3 [&_blockquote]:italic [&_blockquote]:rounded-r-lg [&_hr]:border-neutral-300">
-              <Markdown>{sanitize(data.finalOutput || '').replace(/### 8\.3 Final Strategic Output/g, '')}</Markdown>
-              {data.transparencyReport && (
+            {(() => {
+              const cleanedText = reorderLegacyFinalOutput(sanitize(data.finalOutput || '')).replace(/###\s*8\.\d\s*\[?([^\]\n]+)\]?/g, '### $1').replace(/8\.\d\s*\[?([^\]\n]+)\]?/g, '$1').replace(/###\s*Final Strategic Output/g, '');
+              const parts = cleanedText.split(/(####\s*3\.\s*Tactical Layer[\s\S]*?)(?=####\s*4|###|$)/i);
+
+              return (
+                <>
+                  {parts.map((part, idx) => {
+                    if (/^####\s*3\.\s*Tactical Layer/i.test(part.trim())) {
+                      return (
+                        <div key={idx} className="my-6 relative p-5 bg-neutral-50 rounded-2xl border border-neutral-200 shadow-sm group">
+                          <button
+                            onClick={() => navigator.clipboard.writeText(part.trim())}
+                            className="absolute top-4 right-4 p-2 bg-white rounded-lg border border-neutral-200 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity hover:bg-neutral-50"
+                            title="Copy Tactical Layer"
+                          >
+                            <Copy className="h-4 w-4 text-black"/>
+                          </button>
+                          <div className={MARKDOWN_CLASSES}>
+                            <Markdown>{part}</Markdown>
+                          </div>
+                        </div>
+                      );
+                    }
+                    if (!part.trim()) return null;
+                    return (
+                      <div key={idx} className={MARKDOWN_CLASSES}>
+                        <Markdown>{part}</Markdown>
+                      </div>
+                    );
+                  })}
+                </>
+              );
+            })()}
+            {data.transparencyReport && (
                 <div className="mt-4 pt-3 border-t border-neutral-100">
                   <h2 className="text-[13px] font-black mt-2 mb-2 flex items-center gap-2 before:content-['■'] before:text-black before:text-[10px]">
                     Metacognitive Transparency
@@ -385,7 +439,6 @@ export const RightPanel = memo(() => {
                   </ul>
                 </div>
               )}
-            </div>
           </div>
         </div>
 
@@ -394,7 +447,8 @@ export const RightPanel = memo(() => {
             onClick={() => {
               const report = data.transparencyReport;
               const repText = report ? `\n\n[Transparency Report]\n- Self Healing: ${report.selfHealingLog}\n- Truthfulness: ${report.truthfulnessCheck}\n- Real Impact: ${report.realImpact}\n- Next Action: ${report.nextActionSuggestion}` : '';
-              navigator.clipboard.writeText((data.finalOutput || '').replace(/### 8\.3 Final Strategic Output/g, '').replace(/### 8\.3 Final Consensus Opinion/g, '').trim() + repText);
+              const cleanedText = reorderLegacyFinalOutput(sanitize(data.finalOutput || '')).replace(/###\s*8\.\d\s*\[?([^\]\n]+)\]?/g, '### $1').replace(/8\.\d\s*\[?([^\]\n]+)\]?/g, '$1').replace(/###\s*Final Strategic Output/g, '').replace(/###\s*Final Consensus Opinion/g, '').trim();
+              navigator.clipboard.writeText(cleanedText + repText);
             }}
             className="w-full flex items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white px-4 py-3 text-[12px] font-black text-black hover:bg-neutral-50 transition-all shadow-sm active:scale-[0.98]"
           >

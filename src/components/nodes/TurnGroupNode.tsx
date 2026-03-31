@@ -4,7 +4,7 @@ import { EXPERTS } from '../../lib/experts';
 import { 
   ArrowRight, Sparkles, Bot, MessageSquare,
   Orbit, Search, GitBranch, Shield, Zap, Compass, Wind, Hash,
-  History, Target, Cpu, PenTool, Box, Scale, Trash2
+  History, Target, Cpu, PenTool, Box, Scale, Trash2, Image as ImageIcon
 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { cn, sanitize, sanitizeShort } from '../../lib/utils';
@@ -21,6 +21,7 @@ const IconMap: Record<string, any> = {
 
 export const TurnGroupNode = memo(({ id, data, selected }: NodeProps<Node<TurnGroupNodeData>>) => {
   const [prompt, setPrompt] = useState('');
+  const [promptImage, setPromptImage] = useState<string | undefined>(undefined);
   const [isEnhancing, setIsEnhancing] = useState(false);
   const selectedNodeId = useStore(state => state.selectedNodeId);
   const selectedNodeIds = useStore(state => state.selectedNodeIds);
@@ -55,16 +56,39 @@ export const TurnGroupNode = memo(({ id, data, selected }: NodeProps<Node<TurnGr
 
   const handleExpertClick = (e: React.MouseEvent, turnData: ExpertTurnData) => {
     e.stopPropagation();
+    if (!turnData.expertId) return; // 아직 스켈레톤 상태일 때는 클릭 방지
     const state = useStore.getState();
     state.setSelectedNodeId(`${id}::${turnData.role}`);
     state.setRightPanelOpen(true);
   };
 
-  const renderExpert = (turnData: ExpertTurnData) => {
-    const E = EXPERTS.find((e) => e.id === turnData?.expertId);
-    if (!E) return null;
+  const processImageFile = (file: File) => {
+    if (!file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = (e) => setPromptImage(e.target?.result as string);
+    reader.readAsDataURL(file);
+  };
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) processImageFile(e.target.files[0]);
+  };
+
+  const renderExpert = (turnData: ExpertTurnData) => {
     const role = turnData.role;
+    const E = EXPERTS.find((e) => e.id === turnData?.expertId);
+    
+    if (!E) {
+      return (
+        <div
+          key={role}
+          title={roleTitles[role]}
+          className="w-11 h-11 rounded-[18px] bg-neutral-100 flex items-center justify-center border border-neutral-200 shadow-inner animate-pulse"
+        >
+          <div className="w-3 h-3 rounded-full bg-neutral-300" />
+        </div>
+      );
+    }
+
     const isExpertSelected = selectedNodeId === `${id}::${role}`;
     const ExpertIcon = IconMap[E.iconName || 'Bot'] || Bot;
 
@@ -74,7 +98,7 @@ export const TurnGroupNode = memo(({ id, data, selected }: NodeProps<Node<TurnGr
         onClick={(e) => handleExpertClick(e, turnData)}
         title={roleTitles[role]}
         className={cn(
-          "w-11 h-11 rounded-[18px] flex items-center justify-center transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95 group",
+          "w-11 h-11 rounded-[18px] flex items-center justify-center transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95 group animate-in fade-in zoom-in-50 duration-300",
           isExpertSelected 
             ? "bg-black text-white shadow-xl" 
             : "bg-white text-neutral-400 hover:text-black border border-neutral-100"
@@ -171,11 +195,32 @@ export const TurnGroupNode = memo(({ id, data, selected }: NodeProps<Node<TurnGr
         onClick={(e) => e.stopPropagation()} 
       >
         <div className="flex flex-col gap-4">
-          <h3 className="text-[12px] font-black uppercase tracking-widest text-black flex items-center gap-2">
-            <Sparkles className="h-4 w-4" />
-            New Strategy Prompt
-          </h3>
+          <div className="flex items-center justify-between">
+            <h3 className="text-[12px] font-black uppercase tracking-widest text-black flex items-center gap-2">
+              <Sparkles className="h-4 w-4" />
+              New Strategy
+            </h3>
+            <label
+              className="cursor-pointer text-neutral-400 hover:text-blue-500 transition-colors p-1"
+              title="Upload Support Image"
+            >
+              <ImageIcon className="h-4 w-4" />
+              <input type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
+            </label>
+          </div>
           
+          {promptImage && (
+            <div className="relative w-full rounded-lg overflow-hidden group/img nodrag">
+              <img src={promptImage} alt="Attached" className="h-20 w-full object-cover transition-transform duration-300" />
+              <button 
+                onClick={() => setPromptImage(undefined)}
+                className="absolute top-1 right-1 bg-black/50 hover:bg-black/80 text-white rounded-full p-1 opacity-0 group-hover/img:opacity-100 transition-opacity"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
           <div className="relative rounded-2xl border border-neutral-200 bg-neutral-50/30 p-1">
             <textarea
               id={`input-regen-${id}`}
@@ -201,9 +246,12 @@ export const TurnGroupNode = memo(({ id, data, selected }: NodeProps<Node<TurnGr
               <Sparkles className="h-4 w-4" />
             </button>
             <button
-              className="h-10 w-10 flex items-center justify-center rounded-full bg-black text-white hover:bg-neutral-800 transition-all shadow-xl active:scale-90"
+              className="h-10 w-10 flex items-center justify-center rounded-full bg-black text-white hover:bg-neutral-800 transition-all shadow-xl active:scale-90 disabled:opacity-50"
+              disabled={!prompt.trim() && !promptImage}
               onClick={() => {
-                useStore.getState().createPromptAndRegenerate(id, prompt);
+                useStore.getState().createPromptAndRegenerate(id, prompt, promptImage);
+                setPrompt('');
+                setPromptImage(undefined);
               }}
               title="Re-generate Strategy"
             >
