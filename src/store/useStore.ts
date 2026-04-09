@@ -63,6 +63,7 @@ interface AppState {
   // UI State
   isLeftPanelOpen: boolean;
   isRightPanelOpen: boolean;
+  setLeftPanelOpen: (isOpen: boolean) => void;
   toggleLeftPanel: () => void;
   toggleRightPanel: () => void;
   setRightPanelOpen: (isOpen: boolean) => void;
@@ -70,18 +71,21 @@ interface AppState {
   setRightPanelWidth: (width: number) => void;
   selectedNodeId: string | null;
   selectedNodeIds: string[];
+  lastActiveNodeId: string | null;
   setSelectedNodeId: (id: string | null) => void;
   setSelectedNodeIds: (ids: string[]) => void;
+  setLastActiveNodeId: (id: string | null) => void;
+  
+  firstPromptText: string;
+  syncFirstPromptText: (text: string) => void;
   toolMode: 'select' | 'pan' | 'lasso';
   setToolMode: (mode: 'select' | 'pan' | 'lasso') => void;
 
   // Expert & Generation State
   autoExpertMode: boolean;
-  setAutoExpertMode: (val: boolean) => void;
-  selectedExpertIds: string[];
-  toggleExpertSelection: (id: string) => void;
   isGenerating: boolean;
   setIsGenerating: (val: boolean) => void;
+  getChatHistory: (leafNodeId: string) => AppNode[];
   currentMode: AppMode;
   setCurrentMode: (mode: AppMode) => void;
   generationTurn: number;
@@ -95,9 +99,20 @@ interface AppState {
   deleteNode: (id: string) => void;
   deleteNodes: (ids: string[]) => void;
   deletePromptVersion: (nodeId: string, versionId: string) => void;
+
+  // 기획자 아코디언 브릿지
+  activeExpertRole: string | null; // '트리거되어 열릴' 엑스퍼트 role e.g. 'thesis'
+  setActiveExpertRole: (role: string | null) => void;
+
+  // 스니펫
+  snippets: { id: string; title: string; content: string; timestamp: number }[];
+  addSnippet: (content: string, title?: string) => void;
+  deleteSnippet: (id: string) => void;
 }
 
 export const generateId = () => Math.random().toString(36).substring(2, 9);
+
+// 삭제: spawnExplorers 함수는 독립적인 전문가 노드 생성 버그로 인해 제거됨.
 
 export const useStore = create<AppState>((set, get) => ({
   nodes: [],
@@ -134,6 +149,8 @@ export const useStore = create<AppState>((set, get) => ({
 
     const newEdge = {
       ...connection,
+      sourceHandle: connection.sourceHandle || 'bottom',
+      targetHandle: connection.targetHandle || 'top',
       id: `e-${generateId()}`,
       type: 'protocolEdge',
       data: { 
@@ -421,34 +438,71 @@ export const useStore = create<AppState>((set, get) => ({
     get().loadProjectsList();
   },
 
-  isLeftPanelOpen: true,
+  isLeftPanelOpen: true, // 첫 시작화면에서는 열려 있음
   isRightPanelOpen: true,
+  setLeftPanelOpen: (isOpen) => set({ isLeftPanelOpen: isOpen }),
   toggleLeftPanel: () => set((state) => ({ isLeftPanelOpen: !state.isLeftPanelOpen })),
   toggleRightPanel: () => set((state) => ({ isRightPanelOpen: !state.isRightPanelOpen })),
   setRightPanelOpen: (isOpen) => set({ isRightPanelOpen: isOpen }),
-  rightPanelWidth: Number(localStorage.getItem('rightPanelWidth')) || 400,
+  rightPanelWidth: Number(localStorage.getItem('rightPanelWidth')) || window.innerWidth * 0.55,
   setRightPanelWidth: (width) => {
     set({ rightPanelWidth: width });
     localStorage.setItem('rightPanelWidth', width.toString());
   },
   selectedNodeId: null,
   selectedNodeIds: [],
-  setSelectedNodeId: (id) => set({ selectedNodeId: id }),
+  lastActiveNodeId: null,
+  firstPromptText: '',
+  syncFirstPromptText: (text) => set({ firstPromptText: text }),
+  setSelectedNodeId: (id) => set((state) => ({ 
+    selectedNodeId: id,
+    lastActiveNodeId: id !== null ? id : state.lastActiveNodeId
+  })),
+  setLastActiveNodeId: (id) => set({ lastActiveNodeId: id }),
   setSelectedNodeIds: (ids) => set({ selectedNodeIds: ids }),
   toolMode: 'select' as 'select' | 'pan' | 'lasso',
   setToolMode: (mode) => set({ toolMode: mode }),
 
+  activeExpertRole: null,
+  setActiveExpertRole: (role) => set({ activeExpertRole: role }),
+
+  snippets: [],
+  addSnippet: (content, title) => set((state) => ({
+    snippets: [
+      ...state.snippets,
+      {
+        id: generateId(),
+        title: title || `스니펫 ${new Date().toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`,
+        content,
+        timestamp: Date.now(),
+      }
+    ]
+  })),
+  deleteSnippet: (id) => set((state) => ({
+    snippets: state.snippets.filter(s => s.id !== id)
+  })),
+
   autoExpertMode: true,
-  setAutoExpertMode: (val) => set({ autoExpertMode: val }),
-  selectedExpertIds: EXPERTS.map((e) => e.id),
-  toggleExpertSelection: (id) =>
-    set((state) => ({
-      selectedExpertIds: state.selectedExpertIds.includes(id)
-        ? state.selectedExpertIds.filter((eId) => eId !== id)
-        : [...state.selectedExpertIds, id],
-    })),
   isGenerating: false,
   setIsGenerating: (val) => set({ isGenerating: val }),
+  
+  getChatHistory: (leafNodeId: string) => {
+    const state = get();
+    const history: AppNode[] = [];
+    let currentId: string | null = leafNodeId;
+    const visited = new Set<string>();
+
+    while (currentId && !visited.has(currentId)) {
+      visited.add(currentId);
+      const node = state.nodes.find(n => n.id === currentId);
+      if (node) {
+        history.unshift(node);
+      }
+      const incomingEdge = state.edges.find(e => e.target === currentId);
+      currentId = incomingEdge ? incomingEdge.source : null;
+    }
+    return history;
+  },
   currentMode: null,
   setCurrentMode: (mode) => set({ currentMode: mode }),
   generationTurn: 0,
@@ -462,8 +516,8 @@ export const useStore = create<AppState>((set, get) => ({
 
     // 1. Prompt Node 생성 (임시 입력값을 노드화)
     const promptNodeId = `node-prompt-${generateId()}`;
-    const newX = sourceNode.position.x + 950;
-    const newY = sourceNode.position.y;
+    const newX = sourceNode.position.x;
+    const newY = sourceNode.position.y + 600;
 
     state.addNode({
       id: promptNodeId,
@@ -569,7 +623,7 @@ export const useStore = create<AppState>((set, get) => ({
     const imageData = targetVersion.imageData;
 
     state.setIsGenerating(true);
-    state.setRightPanelWidth(window.innerWidth * 0.5);
+    state.setRightPanelWidth(window.innerWidth * 0.6);
     state.setRightPanelOpen(true);
     
     const newGroupId = `node-group-regen-${generateId()}`;
@@ -582,7 +636,7 @@ export const useStore = create<AppState>((set, get) => ({
     state.addNode({
       id: newGroupId,
       type: 'turnGroup',
-      position: { x: promptNode.position.x + 350, y: promptNode.position.y },
+      position: { x: promptNode.position.x, y: promptNode.position.y + 700 }, // 약간 더 간격 벌림
       selected: true,
       data: {
         turn,
@@ -612,7 +666,7 @@ export const useStore = create<AppState>((set, get) => ({
         await generateDiscussion(
           promptText,
           state.currentMode || 'A',
-          state.selectedExpertIds,
+          EXPERTS.map(e => e.id),
           {
             onSquadSelected: (squad) => {
               state.updateNodeData(newGroupId, { ...squad });
@@ -631,7 +685,7 @@ export const useStore = create<AppState>((set, get) => ({
           prevFinalOutput,
           promptText,
           state.currentMode,
-          state.selectedExpertIds,
+          EXPERTS.map(e => e.id),
           {
             onSquadSelected: (squad) => {
               state.updateNodeData(newGroupId, { ...squad });
@@ -663,8 +717,30 @@ export const useStore = create<AppState>((set, get) => ({
     state.setRightPanelWidth(window.innerWidth * 0.5);
     state.setRightPanelOpen(true);
 
+    // 1. 빈 내용의 노드는 무시하도록 사전에 필터링 (validSourceIds 추출)
+    const validSourceIds = sourceIds.filter(id => {
+      const node = state.nodes.find(n => n.id === id);
+      if (!node) return false;
+      let content = '';
+      if (isTurnGroupNode(node)) {
+        content = node.data.finalOutput || '';
+      } else if (isPromptNode(node)) {
+        const pData = getPromptNodeData(node.data);
+        content = pData.versions.find(v => v.id === pData.currentVersionId)?.text || '';
+      } else if (isStickyNode(node)) {
+        content = node.data.fullText || node.data.text || '';
+      }
+      return content.trim().length > 0;
+    });
+
+    if (validSourceIds.length === 0) {
+      state.setIsGenerating(false);
+      state.setRightPanelOpen(false);
+      return;
+    }
+
     // 1. 소스 노드들로부터 텍스트 추출 및 취합 (Aggregation Process)
-    const aggregatedParts = sourceIds.map((id, index) => {
+    const aggregatedParts = validSourceIds.map((id, index) => {
       const node = state.nodes.find(n => n.id === id);
       if (!node) return `Source ${index + 1}: [Unknown]`;
       
@@ -688,10 +764,10 @@ export const useStore = create<AppState>((set, get) => ({
 
     const aggregatedPrompt = `[통합 안건 — 다중 노드 결합 결론 도출]\n\n${aggregatedParts.join('\n\n')}\n\n---\n[추가 지시사항]\n${customPrompt || '위 소스들을 종합하여 안건을 심층 분석하십시오. **반드시 첫 줄에 [[SQUAD]] 태그부터 시작하는 GEMS 프로토콜의 모든 출력 태그 규칙을 예외 없이 엄격하게 준수하여 토론을 진행해야 합니다.**'}`;
 
-    // 2. 결과 노드(TurnGroupNode) 생성 위치 계산 (첫 번째 노드 기준 우측)
-    const firstNode = state.nodes.find(n => n.id === sourceIds[0]);
+    // 2. 결과 노드(TurnGroupNode) 생성 위치 계산 (첫 번째 유효한 노드 기준 우측)
+    const firstNode = state.nodes.find(n => n.id === validSourceIds[0]);
     const spawnPos = firstNode 
-      ? { x: firstNode.position.x + 650, y: firstNode.position.y }
+      ? { x: firstNode.position.x, y: firstNode.position.y + 600 }
       : { x: 500, y: 500 };
 
     const newGroupId = `node-group-combined-${generateId()}`;
@@ -718,8 +794,8 @@ export const useStore = create<AppState>((set, get) => ({
       },
     } as any);
 
-    // 4. 모든 소스 노드와 새 노드 연결 (Multi-Edge)
-    sourceIds.forEach(sourceId => {
+    // 4. 유효한 소스 노드들과 새 노드 연결 (Multi-Edge)
+    validSourceIds.forEach(sourceId => {
       state.onConnect({
         source: sourceId,
         target: newGroupId,
@@ -738,7 +814,7 @@ export const useStore = create<AppState>((set, get) => ({
       await generateDiscussion(
         aggregatedPrompt,
         state.currentMode || 'A',
-        state.selectedExpertIds,
+        EXPERTS.map(e => e.id),
         {
           onSquadSelected: (squad) => {
             state.updateNodeData(newGroupId, { ...squad });

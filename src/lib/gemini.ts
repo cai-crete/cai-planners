@@ -194,11 +194,10 @@ export async function generateDiscussion(
 #키워드1 #키워드2 #키워드3 #키워드4 #키워드5
 
 [[SHORT_FINAL]]
-⚠️ 아래 규칙을 절대 준수하십시오:
-- 분량: 반드시 3문장 이내. 초과 금지.
-- 형식: 마크다운 기호(#, **, -, * 등) 완전 금지. 순수 텍스트만 사용.
-- 내용: 전체 의견의 요약이 아닌, 이 안건의 핵심 방향을 직접 선언하는 문장.
-- 예시: "본 안건의 핵심은 상충하는 가치 사이의 균형입니다. 실용적 접근과 원칙 고수가 동시에 필요하며, 첫 단계는 인과성 검증입니다."
+⚠️ 입력된 안건(Context)의 본질을 파악하여, 기획안(FINAL_PLAN)에서 구체적 액션 아이템만을 추출해 리포트하십시오.
+- 분량: 반드시 3~4개의 글머리 기호(Bullet points) 단위로만 작성.
+- 형식: [핵심 키워드] 형태의 대괄호가 가장 먼저 오고, 그 뒤에 해당 키워드에 대한 구체적인 결론 및 해결책을 1줄 이내로 서술.
+- 절대 금지 사항: 예시 제공 금지, 추상적 표현 금지, 철학적 여운 금지.
 
 [[METAC_DEF]]
 판단한 탐구 모드(Mode)와 안건의 본질적 정의, 4인 선발 사유 기술.
@@ -229,12 +228,13 @@ export async function generateDiscussion(
 
 [[FINAL_PLAN]]
 상세 의견서 본문: 위계와 글머리 기호가 살아있는 정식 마크다운 문서.
+⚠️ 추상적 요약을 지양하고, 즉시 실행 가능한 구체적 액션(Actionable Insights) 위주로 문서를 구성하십시오.
 반드시 아래 구조를 포함하십시오:
 ### Final Output: 통합 전략 기획서
-#### 1. Executive Summary
-#### 2. Strategic Layer
-#### 3. Tactical Layer
-#### 4. Execution & Risk
+#### 1. Actionable Executive Summary
+#### 2. Strategic Layer (핵심 전략)
+#### 3. Tactical Layer (실행 전술)
+#### 4. Execution & Risk (실행 계획 및 리스크 방어)
 ### Metacognitive Definition
 ### Workflow Simulation Log
 ### Metacognitive Transparency Report

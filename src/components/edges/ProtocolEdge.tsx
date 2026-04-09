@@ -65,13 +65,13 @@ export const ProtocolEdge = memo(({
   const getBaseStyle = () => {
     switch (protocol) {
       case 'inception':
-        return { stroke: '#D4D4D4', strokeWidth: 1.5, strokeDasharray: '5,5' }; // 밝은 회색 점선
+        return { stroke: '#A3A3A3', strokeWidth: 1.5, strokeDasharray: '5,5' }; // 밝은 회색 점선
       case 'dialectic':
-        return { stroke: '#A3A3A3', strokeWidth: 2 }; // 중간 회석 실선
+        return { stroke: '#737373', strokeWidth: 2 }; // 중간 실선
       case 'evolution':
-        return { stroke: '#737373', strokeWidth: 2 }; // 짙은 회색 실선
+        return { stroke: '#525252', strokeWidth: 2 }; // 짙은 실선
       default:
-        return { stroke: '#E5E5E5', strokeWidth: 1.5 }; // 기본 아주 밝은 회색
+        return { stroke: '#737373', strokeWidth: 1.5 }; // 기본 선명한 회색
     }
   };
 
@@ -85,8 +85,7 @@ export const ProtocolEdge = memo(({
       }
     : {
         ...style,
-        stroke: '#D4D4D4', // 일반 상태는 깨끗한 연한 회색
-        strokeWidth: 1.5,
+        ...getBaseStyle(),
         transition: 'stroke 0.3s ease-in-out, stroke-width 0.3s ease-in-out',
       };
 

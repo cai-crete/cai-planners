@@ -52,7 +52,7 @@ export const SynapseNode = memo(({ id, data, selected }: NodeProps<Node<SynapseN
         className="absolute left-0 top-0 bottom-0 w-2.5 transition-colors duration-500"
         style={{ backgroundColor: data.versionColor || '#F3F4F6' }}
       />
-      <Handle type="target" position={Position.Left} className="opacity-0" />
+      <Handle type="target" position={Position.Top} className="opacity-0" />
       
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -141,7 +141,7 @@ export const SynapseNode = memo(({ id, data, selected }: NodeProps<Node<SynapseN
         )}
       </div>
 
-      <Handle type="source" position={Position.Right} className="opacity-0" />
+      <Handle type="source" position={Position.Bottom} className="opacity-0" />
     </div>
   );
 });

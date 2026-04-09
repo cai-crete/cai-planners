@@ -57,7 +57,7 @@ export interface PromptVersion {
 
 export type PromptNodeData = StickyNodeData; // Alias for backward compatibility if needed
 
-export type DiscussionType = 'thesis' | 'antithesis' | 'synthesis';
+export type DiscussionType = 'thesis' | 'antithesis' | 'synthesis' | 'support';
 
 export interface DiscussionNodeData extends Record<string, unknown> {
   type: DiscussionType;
@@ -66,8 +66,21 @@ export interface DiscussionNodeData extends Record<string, unknown> {
   turn: number;
 }
 
+export interface ImageNodeData extends Record<string, unknown> {
+  imageUrl: string;
+  filename?: string;
+  optimized?: boolean;
+}
+
+export interface FileNodeData extends Record<string, unknown> {
+  filename: string;
+  fileType: string;
+  fileSize: number;
+  content?: string;
+}
+
 // Helper types for type guards or casting
-export type AllNodeData = StickyNodeData | TurnGroupNodeData | PromptNodeData | DiscussionNodeData | SynapseNodeData;
+export type AllNodeData = StickyNodeData | TurnGroupNodeData | PromptNodeData | DiscussionNodeData | SynapseNodeData | ImageNodeData | FileNodeData;
 export type AppNode = Node<AllNodeData>;
 
 export function isStickyNode(node: AppNode): node is Node<StickyNodeData> {
@@ -88,6 +101,14 @@ export function isDiscussionNode(node: AppNode): node is Node<DiscussionNodeData
 
 export function isSynapseNode(node: AppNode): node is Node<SynapseNodeData> {
   return node.type === 'synapseNode';
+}
+
+export function isImageNode(node: AppNode): node is Node<ImageNodeData> {
+  return node.type === 'imageNode';
+}
+
+export function isFileNode(node: AppNode): node is Node<FileNodeData> {
+  return node.type === 'fileNode';
 }
 
 /**

@@ -1,6 +1,6 @@
 import { memo, useState } from 'react';
 import { Handle, Position, NodeProps, Node, useReactFlow } from '@xyflow/react';
-import { Sparkles, Lock, Loader2, Copy, Trash2, FileMinus, ArrowRight, Image as ImageIcon, MessageSquare } from 'lucide-react';
+import { Sparkles, Lock, Loader2, Copy, Trash2, FileMinus, ArrowRight, MessageSquare } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { cn } from '../../lib/utils';
 import { enhanceNote } from '../../lib/enhanceNote';
@@ -12,11 +12,12 @@ export const StickyNode = memo(({ id, data, selected }: NodeProps<Node<StickyNod
   const currentVersionId = pData.currentVersionId;
   const currentVersion = versions.find(v => v.id === currentVersionId) || versions[0];
   const activeText = currentVersion?.text || data.text || '';
-  const activeImage = currentVersion?.imageData || data.imageUrl || '';
 
   const [isEnhancing, setIsEnhancing] = useState(false);
   const updateNodeData = useStore((state) => state.updateNodeData);
   const isGenerating = useStore((state) => state.isGenerating);
+  const firstPromptText = useStore((state) => state.firstPromptText);
+  const lastActiveNodeId = useStore((state) => state.lastActiveNodeId);
   const { setNodes, setEdges } = useReactFlow();
 
   const handleCopy = (e: React.MouseEvent) => {
@@ -37,12 +38,12 @@ export const StickyNode = memo(({ id, data, selected }: NodeProps<Node<StickyNod
   };
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    useStore.getState().updatePromptTextWithBranching(id, currentVersionId, e.target.value, activeImage);
+    useStore.getState().updatePromptTextWithBranching(id, currentVersionId, e.target.value, undefined);
   };
 
   const handleRegenerate = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (activeText.trim() || activeImage) {
+    if (activeText.trim()) {
       useStore.getState().reGenerateFromPrompt(id);
     }
   };
@@ -57,8 +58,7 @@ export const StickyNode = memo(({ id, data, selected }: NodeProps<Node<StickyNod
     
     setIsEnhancing(true);
     try {
-      const { enhancePromptForRegenerate } = await import('../../lib/gemini');
-      const enhanced = await enhancePromptForRegenerate(activeText);
+      const enhanced = await enhanceNote(activeText);
       
       const updatedVersions = versions.map(v => 
         v.id === currentVersionId ? { ...v, text: enhanced } : v
@@ -76,52 +76,6 @@ export const StickyNode = memo(({ id, data, selected }: NodeProps<Node<StickyNod
     }
   };
 
-  const processImageFile = (file: File) => {
-    if (!file.type.startsWith('image/')) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const result = e.target?.result as string;
-      useStore.getState().updatePromptTextWithBranching(id, currentVersionId, activeText, result);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleRemoveImage = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    useStore.getState().updatePromptTextWithBranching(id, currentVersionId, activeText, undefined);
-  };
-
-  const handlePaste = (e: React.ClipboardEvent) => {
-    const items = e.clipboardData.items;
-    for (const item of items) {
-      if (item.type.startsWith('image/')) {
-        const file = item.getAsFile();
-        if (file) {
-          processImageFile(file);
-          e.preventDefault();
-          break;
-        }
-      }
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      processImageFile(e.dataTransfer.files[0]);
-    }
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      processImageFile(e.target.files[0]);
-    }
-  };
-
   const isFocused = selected;
 
   const isPromptNodeType = (data.versions && data.versions.length > 0) || versions.length > 1;
@@ -130,15 +84,12 @@ export const StickyNode = memo(({ id, data, selected }: NodeProps<Node<StickyNod
     <div
       className={cn(
         'w-[300px] rounded-2xl bg-white p-4 shadow-lg flex flex-col gap-3 relative border-2 group transition-[border-color,box-shadow] duration-300',
-        isFocused ? 'border-black ring-2 ring-black/20' : 'border-neutral-200',
+        lastActiveNodeId === id ? 'border-black ring-2 ring-black/20' : 'border-neutral-200',
         (isGenerating || data.isLocked || isEnhancing) && 'opacity-80'
       )}
-      onPaste={handlePaste}
-      onDrop={handleDrop}
-      onDragOver={handleDragOver}
     >
-      <Handle type="target" position={Position.Left} className="w-3 h-3 bg-neutral-800 opacity-50 hover:opacity-100" />
-      <Handle type="target" position={Position.Top} className="opacity-0" />
+      <Handle type="target" position={Position.Top} className="w-3 h-3 bg-neutral-800 opacity-50 hover:opacity-100" />
+      <Handle type="source" position={Position.Bottom} className="w-3 h-3 bg-neutral-800 opacity-50 hover:opacity-100" />
 
       <div className="flex flex-col gap-2">
         {/* Tabs Bar: 버전 탭이 2개 이상이거나 원래 Prompt 기반일 때 */}
@@ -174,13 +125,6 @@ export const StickyNode = memo(({ id, data, selected }: NodeProps<Node<StickyNod
           </div>
           
           <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100">
-            <label
-              className="cursor-pointer text-neutral-400 hover:text-blue-500 transition-colors p-1"
-              title="Upload Image (Vision)"
-            >
-              <ImageIcon className="h-4 w-4" />
-              <input type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
-            </label>
             {versions.length > 1 && (
               <button
                 onClick={handleDeleteTab}
@@ -201,35 +145,18 @@ export const StickyNode = memo(({ id, data, selected }: NodeProps<Node<StickyNod
         </div>
       </div>
 
-      {activeImage && (
-        <div className="relative mb-1 w-full rounded-lg overflow-hidden group/img nodrag">
-          <img
-            src={activeImage}
-            alt="Attached"
-            className="h-32 w-full object-cover transition-transform duration-300"
-          />
-          <button 
-            onClick={handleRemoveImage}
-            className="absolute top-2 right-2 bg-black/50 hover:bg-black/80 text-white rounded-full p-1.5 opacity-0 group-hover/img:opacity-100 transition-opacity backdrop-blur-sm"
-            title="Remove Image"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
-
       {isFocused ? (
         <textarea
           className="w-full h-[120px] resize-none outline-none text-sm text-neutral-800 placeholder-neutral-300 bg-transparent custom-scrollbar nodrag"
           placeholder="Enter prompt or text..."
-          value={activeText}
+          value={activeText || firstPromptText}
           onChange={handleTextChange}
           onMouseDown={(e) => e.stopPropagation()}
-          autoFocus={!activeImage}
+          autoFocus={true}
         />
       ) : (
         <div className="w-full h-[120px] overflow-hidden text-sm text-neutral-800 whitespace-pre-wrap custom-scrollbar cursor-text">
-          {activeText || <span className="text-neutral-300 italic">Enter prompt or text...</span>}
+          {activeText || firstPromptText || <span className="text-neutral-300 italic">Enter prompt or text...</span>}
         </div>
       )}
 
@@ -255,7 +182,7 @@ export const StickyNode = memo(({ id, data, selected }: NodeProps<Node<StickyNod
           </button>
           <button
             onClick={handleRegenerate}
-            disabled={(!activeText.trim() && !activeImage) || isGenerating}
+            disabled={!activeText.trim() || isGenerating}
             className="flex-1 flex items-center justify-center gap-1.5 h-8 rounded-md bg-neutral-900 text-white hover:bg-black transition-colors shadow-sm text-xs font-bold disabled:opacity-50"
             title="Generate Strategy"
           >
@@ -264,8 +191,6 @@ export const StickyNode = memo(({ id, data, selected }: NodeProps<Node<StickyNod
         </div>
       )}
 
-      <Handle type="source" position={Position.Right} className="w-3 h-3 bg-neutral-800 opacity-50 hover:opacity-100" />
-      <Handle type="source" position={Position.Bottom} className="opacity-0" />
     </div>
   );
 });

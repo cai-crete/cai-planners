@@ -13,10 +13,15 @@ import {
   Scan,
   Minus,
   Plus,
+  Box,
+  Library,
+  Copy,
+  Trash2,
+  ClipboardCheck,
 } from 'lucide-react';
 
 export const LeftPanel = memo(() => {
-  const { nodes, toolMode, setToolMode, addNode, isRightPanelOpen, rightPanelWidth } = useStore();
+  const { nodes, toolMode, setToolMode, addNode, isRightPanelOpen, rightPanelWidth, isLeftPanelOpen, snippets, addSnippet, deleteSnippet } = useStore();
   const { zoomIn, zoomOut, fitView, getViewport, setViewport } = useReactFlow();
   const [zoomLevel, setZoomLevel] = useState(100);
 
@@ -41,19 +46,27 @@ export const LeftPanel = memo(() => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
-    input.onchange = (e) => {
+    input.onchange = async (e) => {
       const target = e.target as HTMLInputElement;
       if (target.files && target.files.length > 0) {
-        const reader = new FileReader();
-        reader.onload = (re) => {
+        const file = target.files[0];
+        try {
+          const { resizeImageLocal } = await import('../lib/utils');
+          const optimizedDataUrl = await resizeImageLocal(file, 1024);
+          
           addNode({
-            id: `sticky-img-${Date.now()}`,
-            type: 'sticky',
-            position: { x: window.innerWidth / 2 - 100, y: window.innerHeight / 2 - 100 },
-            data: { text: '', imageUrl: re.target?.result as string },
+            id: `image-${Date.now()}`,
+            type: 'imageNode',
+            position: { x: window.innerWidth / 2 - 120, y: window.innerHeight / 2 - 100 },
+            data: { 
+              imageUrl: optimizedDataUrl,
+              filename: file.name,
+              optimized: true
+            },
           });
-        };
-        reader.readAsDataURL(target.files[0]);
+        } catch (error) {
+          console.error("Image upload failed", error);
+        }
       }
     };
     input.click();
@@ -109,6 +122,8 @@ export const LeftPanel = memo(() => {
   // 커서/손 버튼 활성 여부 (lasso 모드가 아닐 때 활성)
   const isCursorHandActive = toolMode === 'select' || toolMode === 'pan';
 
+  const [activeTab, setActiveTab] = useState<'sessions' | 'snippets'>('sessions');
+
   // 아이콘 공통 프롭스 (1.5px 굵기로 세련되게)
   const iconProps = {
     size: 16,
@@ -116,16 +131,104 @@ export const LeftPanel = memo(() => {
   };
 
   return (
-    <div className="absolute left-6 top-1/2 -translate-y-1/2 z-40 flex flex-col items-center gap-3">
-
-      {/* ── 1. 이미지 업로드 버튼 (독립된 원형) ── */}
-      <button
-        onClick={handleAddImage}
-        title="이미지 업로드"
-        className="w-10 h-10 flex items-center justify-center rounded-full bg-black text-white shadow-lg hover:opacity-80 transition-all active:scale-95"
+    <>
+      {/* ── Library Panel (좌측 트레이) ── */}
+      <div 
+        className={cn(
+          "absolute left-4 top-20 bottom-4 w-72 bg-white/90 backdrop-blur-md rounded-2xl shadow-[0_8px_32px_rgb(0,0,0,0.06)] border border-neutral-200/50 z-30 transition-all duration-300 ease-out flex flex-col overflow-hidden",
+          isLeftPanelOpen ? "translate-x-0 opacity-100" : "-translate-x-full opacity-0 pointer-events-none"
+        )}
       >
-        <ImageUp {...iconProps} />
-      </button>
+        <div className="flex items-center w-full px-4 pt-4 pb-2 border-b border-neutral-100 gap-4">
+          <button 
+            onClick={() => setActiveTab('sessions')}
+            className={cn("text-[11px] font-black uppercase tracking-widest transition-colors", activeTab === 'sessions' ? "text-black" : "text-neutral-400 hover:text-neutral-600")}
+          >
+            SESSIONS
+          </button>
+          <button 
+            onClick={() => setActiveTab('snippets')}
+            className={cn("text-[11px] font-black uppercase tracking-widest transition-colors", activeTab === 'snippets' ? "text-black" : "text-neutral-400 hover:text-neutral-600")}
+          >
+            NODE
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+          {activeTab === 'sessions' ? (
+            <div className="flex flex-col gap-2">
+              {/* 임시 세션 데이터 */}
+              <div className="p-3 rounded-xl border border-neutral-100 bg-neutral-50/50 hover:bg-neutral-50 cursor-pointer transition-colors">
+                <h4 className="text-[12px] font-bold text-neutral-800 mb-1">Current Session</h4>
+                <p className="text-[10px] text-neutral-400">진행 중인 캔버스 대화 기록</p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {snippets.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 opacity-50">
+                  <ImageUp className="w-8 h-8 text-neutral-300 mb-2" />
+                  <p className="text-[10px] font-bold tracking-widest text-neutral-400 text-center">컨버스에 이미지를<br/>드래그하거나 더하기 해주세요</p>
+                </div>
+              ) : (
+                snippets.slice().reverse().map((s) => (
+                  <div key={s.id} className="group relative p-3 rounded-xl border border-neutral-100 bg-neutral-50/50 hover:bg-neutral-50 cursor-pointer transition-colors">
+                    <div className="flex items-start justify-between gap-2">
+                      <h4 className="text-[11px] font-bold text-neutral-800 truncate flex-1">{s.title}</h4>
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                        <button
+                          onClick={() => navigator.clipboard.writeText(s.content)}
+                          className="p-1 text-neutral-400 hover:text-black transition-colors rounded"
+                          title="클립보드 복사"
+                        >
+                          <Copy className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={() => deleteSnippet(s.id)}
+                          className="p-1 text-neutral-400 hover:text-red-500 transition-colors rounded"
+                          title="스니펫 삭제"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-[9px] text-neutral-400 mt-0.5 line-clamp-2 leading-relaxed">{s.content.slice(0, 60)}...</p>
+                    <p className="text-[9px] text-neutral-300 mt-1">{new Date(s.timestamp).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Floating Toolbars ── */}
+      <div 
+        className={cn(
+          "absolute top-1/2 -translate-y-1/2 z-40 flex flex-col items-center gap-3 transition-all duration-300 ease-out",
+          isLeftPanelOpen ? "left-80" : "left-6"
+        )}
+      >
+
+      <div className="flex flex-col gap-2">
+        {/* ── 1. 서랍 패널 토글 버튼 (독립된 원형) ── */}
+        <button
+          onClick={() => useStore.getState().toggleLeftPanel()}
+          title="라이브러리 토글"
+          className="w-10 h-10 flex items-center justify-center rounded-full bg-black text-white shadow-lg hover:opacity-80 transition-all active:scale-95"
+        >
+          <Library {...iconProps} />
+        </button>
+
+        {/* ── 2. 이미지 업로드 버튼 ── */}
+        <button
+          onClick={handleAddImage}
+          title="이미지 업로드"
+          className="w-10 h-10 flex items-center justify-center rounded-full bg-black text-white shadow-lg hover:opacity-80 transition-all active:scale-95"
+        >
+          <ImageUp {...iconProps} />
+        </button>
+      </div>
 
       {/* ── 2. 도구 Pill ── */}
       <div className="flex flex-col items-center gap-1 p-1 rounded-full bg-white/90 backdrop-blur-md border border-neutral-200/50 shadow-[0_8px_32px_rgb(0,0,0,0.06)]">
@@ -228,6 +331,7 @@ export const LeftPanel = memo(() => {
           <Minus {...iconProps} />
         </button>
       </div>
-    </div>
+      </div>
+    </>
   );
 });

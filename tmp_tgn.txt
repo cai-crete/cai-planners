@@ -1,18 +1,14 @@
-import { memo, useState, useMemo } from 'react';
+﻿import { memo, useState, useMemo } from 'react';
 import { Handle, Position, NodeProps, Node } from '@xyflow/react';
 import { EXPERTS } from '../../lib/experts';
 import { 
   ArrowRight, Sparkles, Bot, MessageSquare,
   Orbit, Search, GitBranch, Shield, Zap, Compass, Wind, Hash,
-  History, Target, Cpu, PenTool, Box, Scale, Trash2, Copy, Star, Image as ImageIcon
+  History, Target, Cpu, PenTool, Box, Scale
 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
-import { cn, sanitize, sanitizeShort } from '../../lib/utils';
-import { 
-  TurnGroupNodeData, ExpertTurnData, isTurnGroupNode, 
-  isPromptNode, PromptNodeData, getPromptNodeData 
-} from '../../types/nodes';
-import { GEMS_PALETTE } from '../../store/useStore';
+import { cn, sanitize } from '../../lib/utils';
+import { TurnGroupNodeData, ExpertTurnData } from '../../types/nodes';
 
 const IconMap: Record<string, any> = {
   Orbit, Search, GitBranch, Shield, Zap, Compass, Wind, Hash,
@@ -24,8 +20,6 @@ export const TurnGroupNode = memo(({ id, data, selected }: NodeProps<Node<TurnGr
   const [isEnhancing, setIsEnhancing] = useState(false);
   const selectedNodeId = useStore(state => state.selectedNodeId);
   const selectedNodeIds = useStore(state => state.selectedNodeIds);
-  const activeExpertRole = useStore(state => state.activeExpertRole);
-  const lastActiveNodeId = useStore(state => state.lastActiveNodeId);
 
   const isFocusSelected = useMemo(() => {
     return selectedNodeId === id || (selectedNodeId && selectedNodeId.startsWith(id + '::'));
@@ -35,44 +29,42 @@ export const TurnGroupNode = memo(({ id, data, selected }: NodeProps<Node<TurnGr
     return selectedNodeIds.length === 1 && selectedNodeIds[0] === id;
   }, [selectedNodeIds, id]);
 
-  const handleCopySummary = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    navigator.clipboard.writeText(
-      data.shortFinalOutput || (data.finalOutput || '').slice(0, 200) + '...'
-    );
-  };
-
   const handleEnhance = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!prompt.trim() || isEnhancing) return;
     setIsEnhancing(true);
+    // Note: implementation details for enhancePromptForRegenerate might vary, 
+    // but we'll stick to the core logic.
     setIsEnhancing(false);
+  };
+
+  const roleTitles: Record<string, string> = {
+    thesis: '제안 (THESIS)',
+    antithesis: '반박 (ANTITHESIS)',
+    support: '검증 (SUPPORT)',
+    synthesis: '통합 (SYNTHESIS)',
   };
 
   const handleExpertClick = (e: React.MouseEvent, turnData: ExpertTurnData) => {
     e.stopPropagation();
-    if (!turnData?.expertId) return;
     const state = useStore.getState();
-    state.setSelectedNodeId(id);
-    state.setLastActiveNodeId(id);
+    state.setSelectedNodeId(`${id}::${turnData.role}`);
     state.setRightPanelOpen(true);
-    state.setActiveExpertRole(turnData.role);
   };
 
-  const renderExpert = (turnData: ExpertTurnData | undefined) => {
-    if (!turnData || !turnData.expertId) return null;
-    const E = EXPERTS.find((e) => e.id === turnData.expertId);
+  const renderExpert = (turnData: ExpertTurnData) => {
+    const E = EXPERTS.find((e) => e.id === turnData?.expertId);
     if (!E) return null;
 
     const role = turnData.role;
-    const isExpertSelected = activeExpertRole === role;
+    const isExpertSelected = selectedNodeId === `${id}::${role}`;
     const ExpertIcon = IconMap[E.iconName || 'Bot'] || Bot;
 
     return (
       <div
         key={role}
         onClick={(e) => handleExpertClick(e, turnData)}
-        title={`${E.name} — 클릭하여 전문 보기`}
+        title={roleTitles[role]}
         className={cn(
           "w-11 h-11 rounded-[18px] flex items-center justify-center transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95 group",
           isExpertSelected 
@@ -89,62 +81,31 @@ export const TurnGroupNode = memo(({ id, data, selected }: NodeProps<Node<TurnGr
     <div
       className={cn(
         'w-[540px] rounded-[40px] bg-[#EEEEEE] p-3 shadow-2xl relative transition-all duration-300 border border-neutral-200 flex items-stretch gap-1 cursor-default hover:ring-2 hover:ring-black/20',
-        (selected || isFocusSelected || isSingleNodeSelected || lastActiveNodeId === id) && 'border-black ring-2 ring-black/20'
+        (selected || isFocusSelected || isSingleNodeSelected) && 'border-black ring-2 ring-black/20'
       )}
     >
-      <Handle type="target" position={Position.Top} id="top" className="opacity-0" />
+      <Handle type="target" position={Position.Top} className="opacity-0" />
 
-      {/* Left Column: Experts */}
-      <div className="flex flex-col gap-2 justify-center pl-2 pr-1 py-4 z-10 relative">
-        {renderExpert(data.thesis)}
-        {renderExpert(data.antithesis)}
-        {renderExpert(data.support)}
-        {renderExpert(data.synthesis)}
+      <div className="flex flex-col gap-2 justify-center pl-2 pr-1 py-4">
+        {data.thesis && renderExpert(data.thesis)}
+        {data.antithesis && renderExpert(data.antithesis)}
+        {data.support && renderExpert(data.support)}
+        {data.synthesis && renderExpert(data.synthesis)}
       </div>
 
       {/* Right Column: Final Plan Card */}
       <div 
-        className="flex-1 bg-white rounded-[32px] p-6 shadow-sm border border-neutral-100 flex flex-col min-w-0 cursor-pointer hover:shadow-md transition-all min-h-[280px] relative overflow-hidden"
+        className="flex-1 bg-white rounded-[32px] p-6 shadow-sm border border-neutral-100 flex flex-col min-w-0 cursor-pointer hover:shadow-md transition-all min-h-[280px]"
         onClick={() => {
           const state = useStore.getState();
           state.setSelectedNodeId(id);
-          
-          // 부모 프롬프트 매칭
-          const edge = state.edges.find(e => e.target === id);
-          if (edge) {
-            const parentNode = state.nodes.find(n => n.id === edge.source);
-            if (parentNode && isPromptNode(parentNode)) {
-              const pData = getPromptNodeData(parentNode.data);
-              const edgeColor = (edge.data as any)?.color;
-              const matchingVersion = (pData.versions || []).find(v => v.color === edgeColor);
-              if (matchingVersion) {
-                state.updateNodeData(parentNode.id, { currentVersionId: matchingVersion.id });
-              }
-            }
-          }
         }}
       >
-
-
-        <div className="flex items-center justify-end mb-4 opacity-40 z-10 relative">
-          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-            <button onClick={handleCopySummary} title="요약 복사" className="hover:text-black transition-colors">
-              <Copy className="h-3 w-3" />
-            </button>
-            <button 
-              onClick={() => useStore.getState().addSnippet(sanitizeShort(data.shortFinalOutput || data.finalOutput || ''), `Node Summary — Turn ${data.turn || 1}`)} 
-              title="스니펫 저장" 
-              className="hover:text-yellow-500 transition-colors"
-            >
-              <Star className="h-3 w-3" />
-            </button>
-            <button onClick={() => useStore.getState().deleteNode(id)} title="삭제" className="hover:text-red-500 transition-colors">
-              <Trash2 className="h-3 w-3" />
-            </button>
-          </div>
+        <div className="flex items-center justify-between mb-4 opacity-30">
+          <span className="text-[8px] font-black uppercase tracking-[0.2em] text-black">FINAL PLAN</span>
         </div>
         
-        <div className="flex-1 flex flex-col justify-start z-10 relative">
+        <div className="flex-1 flex flex-col justify-center">
           <div className="flex items-center gap-2.5 mb-6">
             <div className="p-1.5 rounded-lg bg-black shadow-lg">
               <Bot className="h-3 w-3 text-white" />
@@ -153,14 +114,8 @@ export const TurnGroupNode = memo(({ id, data, selected }: NodeProps<Node<TurnGr
           </div>
           
           <div className="relative pl-6 border-l border-neutral-100">
-            <p className="text-[12.5px] leading-[1.65] font-medium text-neutral-900 line-clamp-none text-left">
-              {sanitizeShort(
-                data.shortFinalOutput
-                  ? data.shortFinalOutput
-                  : (data.finalOutput || '').length > 200
-                    ? (data.finalOutput || '').slice(0, 200).trimEnd() + '...'
-                    : (data.finalOutput || '')
-              )}
+            <p className="text-[12.5px] leading-[1.65] font-medium text-neutral-900 line-clamp-none">
+              {sanitize(data.shortFinalOutput || data.finalOutput || '')}
             </p>
           </div>
         </div>
@@ -176,17 +131,13 @@ export const TurnGroupNode = memo(({ id, data, selected }: NodeProps<Node<TurnGr
         onClick={(e) => e.stopPropagation()} 
       >
         <div className="flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-[12px] font-black uppercase tracking-widest text-black flex items-center gap-2">
-              <Sparkles className="h-4 w-4" />
-              New Strategy
-            </h3>
-          </div>
+          <h3 className="text-[12px] font-black uppercase tracking-widest text-black flex items-center gap-2">
+            <Sparkles className="h-4 w-4" />
+            New Strategy Prompt
+          </h3>
           
           <div className="relative rounded-2xl border border-neutral-200 bg-neutral-50/30 p-1">
             <textarea
-              id={`input-regen-${id}`}
-              name={`textarea-regen-${id}`}
               className="w-full h-[120px] resize-none outline-none text-[13px] text-neutral-800 placeholder-neutral-400 bg-transparent custom-scrollbar p-3 pt-2"
               placeholder="Enter instructions for regeneration..."
               value={prompt}
@@ -208,11 +159,9 @@ export const TurnGroupNode = memo(({ id, data, selected }: NodeProps<Node<TurnGr
               <Sparkles className="h-4 w-4" />
             </button>
             <button
-              className="h-10 w-10 flex items-center justify-center rounded-full bg-black text-white hover:bg-neutral-800 transition-all shadow-xl active:scale-90 disabled:opacity-50"
-              disabled={!prompt.trim()}
+              className="h-10 w-10 flex items-center justify-center rounded-full bg-black text-white hover:bg-neutral-800 transition-all shadow-xl active:scale-90"
               onClick={() => {
-                useStore.getState().createPromptAndRegenerate(id, prompt, undefined); // undefined is no longer image
-                setPrompt('');
+                useStore.getState().createPromptAndRegenerate(id, prompt);
               }}
               title="Re-generate Strategy"
             >
@@ -222,7 +171,7 @@ export const TurnGroupNode = memo(({ id, data, selected }: NodeProps<Node<TurnGr
         </div>
       </div>
 
-      <Handle type="source" position={Position.Bottom} id="bottom" className="opacity-0" />
+      <Handle type="source" position={Position.Bottom} className="opacity-0" />
     </div>
   );
 });

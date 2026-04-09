@@ -17,6 +17,8 @@ export const DiscussionNode = memo(({ id, data, selected }: NodeProps<Node<Discu
         return 'border-black bg-neutral-50';
       case 'synthesis':
         return 'border-black bg-black text-white';
+      case 'support':
+        return 'border-blue-200 bg-blue-50/30';
       default:
         return 'border-neutral-200 bg-white';
     }
@@ -26,6 +28,7 @@ export const DiscussionNode = memo(({ id, data, selected }: NodeProps<Node<Discu
     switch (data.type) {
       case 'thesis': return '제안 (Thesis)';
       case 'antithesis': return '반박 (Antithesis)';
+      case 'support': return '지지 (Support)';
       case 'synthesis': return '통합 (Synthesis)';
     }
   };
@@ -38,7 +41,7 @@ export const DiscussionNode = memo(({ id, data, selected }: NodeProps<Node<Discu
         (selected || selectedNodeId === id) ? 'border-black ring-2 ring-black/20' : 'border-neutral-200'
       )}
     >
-      <Handle type="target" position={Position.Left} className="opacity-0" />
+      <Handle type="target" position={Position.Top} className="opacity-0" />
       
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -75,7 +78,7 @@ export const DiscussionNode = memo(({ id, data, selected }: NodeProps<Node<Discu
         {data.content}
       </div>
 
-      <Handle type="source" position={Position.Right} className="opacity-0" />
+      <Handle type="source" position={Position.Bottom} className="opacity-0" />
     </div>
   );
 });
