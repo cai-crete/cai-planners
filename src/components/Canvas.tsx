@@ -10,7 +10,11 @@ import {
   ReactFlowProvider,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Settings } from 'lucide-react';
+import { 
+  Settings, Loader2, MousePointer2, Hand, Lasso, MessageSquare, 
+  Undo2, Redo2, ImageUp, Scan, Plus, Minus, Box 
+} from 'lucide-react';
+import { cn } from '../lib/utils';
 import { useStore } from '../store/useStore';
 import { StickyNode } from './nodes/StickyNode';
 
@@ -52,9 +56,74 @@ function Flow() {
     isGenerating,
     toolMode,
     selectedNodeId,
+    isCanvasOpen,
+    setToolMode,
+    addNode,
+    rightPanelWidth
   } = useStore();
   
-  const { fitView, setCenter, getZoom, screenToFlowPosition } = useReactFlow();
+  const { fitView, setCenter, getZoom, screenToFlowPosition, zoomIn, zoomOut, getViewport, setViewport } = useReactFlow();
+
+  const [zoomLevel, setZoomLevel] = useState(100);
+
+  useEffect(() => {
+    if (!isCanvasOpen) return;
+    const interval = setInterval(() => {
+      try {
+        const vp = getViewport();
+        if (vp && typeof vp.zoom === 'number') {
+           setZoomLevel(Math.round(vp.zoom * 100));
+        }
+      } catch (e) {}
+    }, 200);
+    return () => clearInterval(interval);
+  }, [getViewport, isCanvasOpen]);
+
+  const handleAddSticky = () => {
+    addNode({
+      id: `sticky-${Date.now()}`,
+      type: 'sticky',
+      position: { x: window.innerWidth / 2 - 100, y: window.innerHeight / 2 - 100 },
+      data: { text: '' },
+    });
+  };
+
+  const handleAddImage = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = async (e) => {
+      const target = e.target as HTMLInputElement;
+      if (target.files && target.files.length > 0) {
+        const file = target.files[0];
+        try {
+          const { resizeImageLocal } = await import('../lib/utils');
+          const optimizedDataUrl = await resizeImageLocal(file, 1024);
+          
+          addNode({
+            id: `image-${Date.now()}`,
+            type: 'imageNode',
+            position: { x: window.innerWidth / 2 - 120, y: window.innerHeight / 2 - 100 },
+            data: { 
+              imageUrl: optimizedDataUrl,
+              filename: file.name,
+              optimized: true
+            },
+          });
+        } catch (error) {
+          console.error("Image upload failed", error);
+        }
+      }
+    };
+    input.click();
+  };
+
+  const handleCursorHandToggle = () => {
+    setToolMode(toolMode === 'select' ? 'pan' : 'select');
+  };
+
+  const isCursorHandActive = toolMode === 'select' || toolMode === 'pan';
+  const iconProps = { size: 16, strokeWidth: 1.5 };
 
   const handleDrop = useCallback(async (event: React.DragEvent) => {
     event.preventDefault();
@@ -160,51 +229,115 @@ function Flow() {
   }, [fitView]);
 
   return (
-    <div className="h-screen w-screen bg-[#fcfcfc] relative overflow-hidden font-sans">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        onNodeClick={handleNodeClick}
-        onPaneClick={handlePaneClick}
-        onSelectionChange={handleSelectionChange}
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-        onNodesDelete={(deleted) => deleteNodes(deleted.map(n => n.id))}
-        deleteKeyCode="Delete"
-        multiSelectionKeyCode="Shift"
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        defaultEdgeOptions={{ type: 'protocolEdge' }}
-        panOnScroll={false}
-        selectionOnDrag={toolMode === 'lasso'}
-        panOnDrag={toolMode === 'pan' ? true : [1, 2]}
-        elementsSelectable={toolMode !== 'pan'}
-        nodesDraggable={toolMode !== 'pan'}
-        zoomOnScroll={true}
-        minZoom={0.1}
-        maxZoom={4}
-        className={toolMode === 'pan' ? 'bg-neutral-50 cursor-grab active:cursor-grabbing' : 'bg-neutral-50'}
-        proOptions={{ hideAttribution: true }}
-      >
-        <Background variant={BackgroundVariant.Lines} gap={20} color="#f2f2f2" lineWidth={1} />
-        <Background variant={BackgroundVariant.Lines} gap={100} color="#f2f2f2" lineWidth={1} />
-        
-      </ReactFlow>
-
+    <div className="h-screen w-screen bg-[#fcfcfc] relative overflow-hidden font-sans flex text-neutral-900">
       <LeftPanel />
       <RightPanel />
 
+      {isCanvasOpen && (
+        <div className="absolute top-0 right-0 h-full w-[33.333333%] bg-white z-[60] border-l border-neutral-200 shadow-2xl animate-in fade-in slide-in-from-right-8 duration-300">
+          <div className="absolute top-6 left-6 z-10">
+            <span className="text-[12px] font-black uppercase tracking-widest text-black/50">Infinite Canvas</span>
+          </div>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onNodeClick={handleNodeClick}
+            onPaneClick={handlePaneClick}
+            onSelectionChange={handleSelectionChange}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onNodesDelete={(deleted) => deleteNodes(deleted.map(n => n.id))}
+            deleteKeyCode="Delete"
+            multiSelectionKeyCode="Shift"
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            defaultEdgeOptions={{ type: 'protocolEdge' }}
+            panOnScroll={false}
+            selectionOnDrag={toolMode === 'lasso'}
+            panOnDrag={toolMode === 'pan' ? true : [1, 2]}
+            elementsSelectable={toolMode !== 'pan'}
+            nodesDraggable={toolMode !== 'pan'}
+            zoomOnScroll={true}
+            minZoom={0.1}
+            maxZoom={4}
+            className={toolMode === 'pan' ? 'bg-neutral-50 cursor-grab active:cursor-grabbing' : 'bg-neutral-50'}
+            proOptions={{ hideAttribution: true }}
+            fitView
+          >
+            <Background variant={BackgroundVariant.Lines} gap={20} color="#f2f2f2" lineWidth={1} />
+            <Background variant={BackgroundVariant.Lines} gap={100} color="#f2f2f2" lineWidth={1} />
+          </ReactFlow>
+
+          {/* ── Floating Toolbars (Canvas 내부 좌측) ── */}
+          <div className="absolute top-1/2 left-4 -translate-y-1/2 z-40 flex flex-col items-center gap-3">
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={handleAddImage}
+                title="이미지 업로드"
+                className="w-10 h-10 flex items-center justify-center rounded-full bg-black text-white shadow-lg hover:opacity-80 transition-all active:scale-95"
+              >
+                <ImageUp {...iconProps} />
+              </button>
+            </div>
+
+            <div className="flex flex-col items-center gap-1 p-1 rounded-full bg-white/90 backdrop-blur-md border border-neutral-200/50 shadow-[0_8px_32px_rgb(0,0,0,0.06)]">
+              <button
+                title={toolMode === 'pan' ? '손 모드' : '커서 모드'}
+                onClick={handleCursorHandToggle}
+                className={cn('w-9 h-9 flex items-center justify-center rounded-full transition-all', isCursorHandActive ? 'bg-black text-white' : 'text-neutral-500 hover:bg-neutral-100')}
+              >
+                {toolMode === 'pan' ? <Hand {...iconProps} /> : <MousePointer2 {...iconProps} />}
+              </button>
+              <button
+                title="올가미 (다중 선택)"
+                onClick={() => setToolMode('lasso')}
+                className={cn('w-9 h-9 flex items-center justify-center rounded-full transition-all', toolMode === 'lasso' ? 'bg-black text-white' : 'text-neutral-500 hover:bg-neutral-100')}
+              >
+                <Lasso {...iconProps} />
+              </button>
+              <div className="w-6 h-px bg-neutral-100 my-0.5" />
+              <button title="텍스트 노드 추가" onClick={handleAddSticky} className="w-9 h-9 flex items-center justify-center rounded-full text-neutral-500 hover:bg-neutral-100 transition-all">
+                <MessageSquare {...iconProps} />
+              </button>
+              <div className="w-6 h-px bg-neutral-100 my-0.5" />
+              <button title="되돌리기" className="w-9 h-9 flex items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-100 transition-all focus:outline-none">
+                <Undo2 {...iconProps} />
+              </button>
+              <button title="다시 실행" className="w-9 h-9 flex items-center justify-center rounded-full text-neutral-400 hover:bg-neutral-100 transition-all focus:outline-none">
+                <Redo2 {...iconProps} />
+              </button>
+            </div>
+
+            <div className="flex flex-col items-center gap-1 p-1 rounded-full bg-white/90 backdrop-blur-md border border-neutral-200/50 shadow-[0_8px_32px_rgb(0,0,0,0.06)]">
+              <button title="화면에 맞추기" onClick={() => fitView({ duration: 800, padding: 0.2 })} className="w-9 h-9 flex items-center justify-center rounded-full text-neutral-500 hover:bg-neutral-100 transition-all">
+                <Scan {...iconProps} />
+              </button>
+              <div className="w-6 h-px bg-neutral-100 my-0.5" />
+              <button title="확대" onClick={() => zoomIn({ duration: 200 })} className="w-9 h-9 flex items-center justify-center rounded-full text-neutral-500 hover:bg-neutral-100 transition-all">
+                <Plus {...iconProps} />
+              </button>
+              <span className="text-[10px] font-bold text-neutral-400 select-none w-9 text-center py-1 tabular-nums">
+                {zoomLevel}%
+              </span>
+              <button title="축소" onClick={() => zoomOut({ duration: 200 })} className="w-9 h-9 flex items-center justify-center rounded-full text-neutral-500 hover:bg-neutral-100 transition-all">
+                <Minus {...iconProps} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isGenerating && (
-        <div className="absolute top-8 left-1/2 -translate-x-1/2 z-50 rounded-full bg-black px-6 py-3 text-sm font-medium text-white shadow-xl flex items-center gap-3 animate-in fade-in slide-in-from-top-4">
+        <div className="absolute top-8 left-1/2 -translate-x-1/2 z-[70] rounded-full bg-black px-6 py-3 text-sm font-medium text-white shadow-xl flex items-center gap-3 animate-in fade-in slide-in-from-top-4">
           <div className="flex gap-1">
             <span className="h-2 w-2 rounded-full bg-white animate-bounce" style={{ animationDelay: '0ms' }} />
             <span className="h-2 w-2 rounded-full bg-white animate-bounce" style={{ animationDelay: '150ms' }} />
             <span className="h-2 w-2 rounded-full bg-white animate-bounce" style={{ animationDelay: '300ms' }} />
           </div>
-          전문가가 분석 중입니다...
+          전문가 3그룹이 병렬 스트리밍 중입니다...
         </div>
       )}
     </div>

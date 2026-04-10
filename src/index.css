@@ -24,28 +24,4 @@
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     background: #d4d4d4;
   }
-
-  .compact-markdown * {
-    margin-top: 0 !important;
-    margin-bottom: 0 !important;
-    padding-top: 0 !important;
-    padding-bottom: 0 !important;
-  }
-  .compact-markdown p, .compact-markdown li {
-    margin-bottom: 2px !important;
-    line-height: 1.8 !important;
-  }
-  .compact-markdown ul, .compact-markdown ol {
-    margin-top: 0 !important;
-    margin-bottom: 8px !important;
-    padding-left: 1.25rem !important;
-  }
-  .compact-markdown li {
-    padding-left: 0.25rem !important;
-  }
-  .compact-markdown h1, .compact-markdown h2, .compact-markdown h3 {
-    margin-top: 16px !important;
-    margin-bottom: 8px !important;
-    font-weight: 900 !important;
-  }
 }

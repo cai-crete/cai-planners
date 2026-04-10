@@ -37,15 +37,7 @@ export default function App() {
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-[#fcfcfc] text-neutral-900 transition-colors font-sans">
       
-      {/* Top Left Init Button (1:1 Logo Style) */}
-      <div className="absolute top-8 left-8 z-50">
-        <button
-          onClick={() => createNewProject()}
-          className="text-[18px] font-black tracking-[-0.05em] hover:opacity-70 transition-opacity flex items-center gap-2 text-black"
-        >
-          PLANNERS
-        </button>
-      </div>
+
 
       <Canvas />
     </div>

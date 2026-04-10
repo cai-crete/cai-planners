@@ -1,5 +1,6 @@
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { EXPERTS } from './experts';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -14,6 +15,7 @@ export function sanitize(text: string | null | undefined): string {
     .replace(/₩n/g, '\n')
     .replace(/\\n/g, '\n')
     .replace(/\\W/g, '\n')
+    .replace(/\\"/g, '"') // [NEW] 불필요한 백슬래시 따옴표 제거
     .replace(/\r\n/g, '\n')
     .replace(/\n\n+/g, '\n\n');
 }
@@ -77,4 +79,24 @@ export function resizeImageLocal(file: File, maxDimension: number = 1024): Promi
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+/**
+ * 텍스트 내의 전문가 ID(T01~T08, P01~P06)를 한글 역할명으로 치환합니다.
+ * @param text 원본 텍스트
+ * @returns 치환된 텍스트 "역할명(ID)"
+ */
+export function formatExpertText(text: string | null | undefined): string {
+  if (!text) return '';
+  let result = text;
+  
+  EXPERTS.forEach(expert => {
+    // ID가 텍스트에 포함되어 있는지 확인 (대소문자 구분 및 경계 확인)
+    const regex = new RegExp(`\\b${expert.id}\\b`, 'g');
+    if (regex.test(result)) {
+      result = result.replace(regex, `${expert.name}(${expert.id})`);
+    }
+  });
+  
+  return result;
 }

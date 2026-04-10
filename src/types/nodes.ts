@@ -31,6 +31,15 @@ export interface StickyNodeData extends Record<string, unknown> {
   currentVersionId?: string;  // [MERGE NEW]
 }
 
+export interface ParallelGroupResult {
+  groupId: string; // 'A', 'B', 'C'
+  squadIds: string[];
+  status: 'pending' | 'loading' | 'complete' | 'error';
+  mode: string;
+  synergyScore?: number; // [NEW] 시너지 점수 (0~10)
+  data: Partial<TurnGroupNodeData>;
+}
+
 export interface TurnGroupNodeData extends Record<string, unknown> {
   turn: number;
   metacognitiveDefinition: MetacognitiveDefinition;
@@ -45,6 +54,11 @@ export interface TurnGroupNodeData extends Record<string, unknown> {
   aggregatedPrompt?: string; // [NEW] 다중 선택 시 취합된 통합 안건 (Raw)
   aggregatedSummary?: string; // [NEW] 취합본 요약 (AI 생성)
   aggregatedKeywords?: string[]; // [NEW] 취합본 키워드 (AI 생성)
+  
+  // [NEW] 3그룹 병렬 모드
+  isParallel?: boolean;
+  parallelResults?: ParallelGroupResult[];
+  selectedGroupId?: string; // 'A', 'B', 'C' 중에서 최종 확정된 그룹
 }
 
 export interface PromptVersion {

@@ -70,7 +70,7 @@ export const MODE_SQUAD_MAP = {
     label: '창의적 탐구 (Creative Exploration)',
     trigger: '새로운 발견, 창조적 발상, 제약 없는 탐색, 미래 예측',
     focus: '가능성의 확장과 전례 없는 아이디어 도출',
-    squad: { thesis: 'T05', antithesis: 'T08', synthesis: 'T01', support: 'P04' },
+    squad: { thesis: 'T05', antithesis: 'T08', synthesis: 'P01', support: 'P04' },
   },
   B: {
     label: '논리적 심화 (Logical Analysis)',
@@ -102,3 +102,31 @@ export const OPTIMAL_TRIOS_TOP10 = [
   { rank: 9,  ids: ['T07', 'T03', 'P03'], scenario: '일시적 우위 + 창발 + 기술' },
   { rank: 10, ids: ['P01', 'T04', 'T05'], scenario: '역산 + 가치사슬 + 혁신' }
 ];
+
+/**
+ * RANKED_SQUAD_DATA — 모드별 4인 정예 스쿼드 랭킹 (Top 5)
+ * 각 스쿼드는 synergeScore를 포함하며, Group A는 Rank 1이 우선 배정됩니다.
+ */
+export const RANKED_SQUAD_DATA: Record<string, { rank: number; ids: string[]; score: number }[]> = {
+  A: [
+    { rank: 1, ids: ['T05', 'P01', 'P04', 'T08'], score: 9.42 },
+    { rank: 2, ids: ['T01', 'T08', 'P04', 'P05'], score: 9.1 },
+    { rank: 3, ids: ['T05', 'P01', 'P04', 'T03'], score: 8.9 },
+    { rank: 4, ids: ['T01', 'T06', 'P04', 'P05'], score: 8.7 },
+    { rank: 5, ids: ['T05', 'T07', 'P01', 'T08'], score: 8.6 },
+  ],
+  B: [
+    { rank: 1, ids: ['T04', 'T02', 'T08', 'P06'], score: 9.3 },
+    { rank: 2, ids: ['T02', 'T08', 'P06', 'P05'], score: 9.0 },
+    { rank: 3, ids: ['T04', 'T08', 'P06', 'P03'], score: 8.8 },
+    { rank: 4, ids: ['T02', 'T04', 'T06', 'T08'], score: 8.7 },
+    { rank: 5, ids: ['T08', 'P06', 'P05', 'T01'], score: 8.5 },
+  ],
+  C: [
+    { rank: 1, ids: ['P02', 'T03', 'P01', 'P05'], score: 9.2 },
+    { rank: 2, ids: ['P02', 'P01', 'P05', 'P03'], score: 8.9 },
+    { rank: 3, ids: ['P01', 'P05', 'P03', 'T07'], score: 8.6 },
+    { rank: 4, ids: ['P02', 'T03', 'T07', 'P06'], score: 8.4 },
+    { rank: 5, ids: ['P01', 'T03', 'P02', 'T02'], score: 8.3 },
+  ],
+};

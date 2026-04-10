@@ -11,7 +11,8 @@ import {
 } from '@xyflow/react';
 import { Project, saveProject, getProject, getAllProjects, deleteProject } from '../lib/db';
 import { EXPERTS } from '../lib/experts';
-import { regenerateDiscussion, generateDiscussion } from '../lib/gemini';
+import { regenerateDiscussion, generateDiscussion, analyzePromptMode } from '../lib/gemini';
+import { RANKED_SQUAD_DATA } from '../lib/synergyData';
 import { 
   AppNode, 
   AllNodeData,
@@ -61,6 +62,9 @@ interface AppState {
   deleteProjectData: (id: string) => Promise<void>;
 
   // UI State
+  isCanvasOpen: boolean;
+  setCanvasOpen: (isOpen: boolean) => void;
+  toggleCanvas: () => void;
   isLeftPanelOpen: boolean;
   isRightPanelOpen: boolean;
   setLeftPanelOpen: (isOpen: boolean) => void;
@@ -99,6 +103,7 @@ interface AppState {
   deleteNode: (id: string) => void;
   deleteNodes: (ids: string[]) => void;
   deletePromptVersion: (nodeId: string, versionId: string) => void;
+  duplicateCurrentProject: () => Promise<void>;
 
   // 기획자 아코디언 브릿지
   activeExpertRole: string | null; // '트리거되어 열릴' 엑스퍼트 role e.g. 'thesis'
@@ -401,10 +406,17 @@ export const useStore = create<AppState>((set, get) => ({
   loadProjectData: async (id) => {
     const project = await getProject(id);
     if (project) {
+      // 가장 최근 노드(보통 마지막 노드)를 자동으로 선택하여 화면에 즉시 표시
+      const lastNodeId = project.nodes.length > 0 
+        ? project.nodes[project.nodes.length - 1].id 
+        : null;
+
       set({
         currentProjectId: project.id,
         nodes: project.nodes,
         edges: project.edges,
+        selectedNodeId: lastNodeId,
+        isRightPanelOpen: true, // 세션 로드 시 패널을 열어 대화가 보이도록 함
       });
     }
   },
@@ -417,8 +429,6 @@ export const useStore = create<AppState>((set, get) => ({
         const serializableNodes = nodes.map((n) => {
           if (!isTurnGroupNode(n)) return n;
           const { thesis, antithesis, synthesis, support, ...rest } = n.data;
-          // React Flow의 내부 속성 등이 섞일 수 있으므로 필요한 데이터만 추출하거나
-          // 혹은 직렬화 방해 요소를 명확히 제거
           return { ...n, data: { thesis, antithesis, synthesis, support, ...rest } };
         });
         await saveProject({
@@ -430,14 +440,46 @@ export const useStore = create<AppState>((set, get) => ({
       }
     }
   },
+  duplicateCurrentProject: async () => {
+    const { currentProjectId, nodes, edges } = get();
+    if (!currentProjectId) return;
+    const project = await getProject(currentProjectId);
+    if (!project) return;
+
+    const newProject: Project = {
+      ...project,
+      id: generateId(),
+      name: `${project.name} (원본 기록)`,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      nodes: [...nodes],
+      edges: [...edges],
+    };
+
+    await saveProject(newProject);
+    await get().loadProjectsList();
+  },
   deleteProjectData: async (id) => {
     await deleteProject(id);
-    if (get().currentProjectId === id) {
+    const wasCurrentProject = get().currentProjectId === id;
+    if (wasCurrentProject) {
       set({ currentProjectId: null, nodes: [], edges: [] });
     }
-    get().loadProjectsList();
+    await get().loadProjectsList();
+    // 현재 프로젝트를 삭제했을 경우, 남은 프로젝트로 자동 전환
+    if (wasCurrentProject) {
+      const remaining = useStore.getState().projects;
+      if (remaining.length > 0) {
+        await get().loadProjectData(remaining[0].id);
+      } else {
+        await get().createNewProject();
+      }
+    }
   },
 
+  isCanvasOpen: false, // 기본적으로 닫혀있음
+  setCanvasOpen: (isOpen) => set({ isCanvasOpen: isOpen }),
+  toggleCanvas: () => set((state) => ({ isCanvasOpen: !state.isCanvasOpen })),
   isLeftPanelOpen: true, // 첫 시작화면에서는 열려 있음
   isRightPanelOpen: true,
   setLeftPanelOpen: (isOpen) => set({ isLeftPanelOpen: isOpen }),
@@ -625,12 +667,39 @@ export const useStore = create<AppState>((set, get) => ({
     state.setIsGenerating(true);
     state.setRightPanelWidth(window.innerWidth * 0.6);
     state.setRightPanelOpen(true);
+
+    // 1. 모드 자동 판별 (지능형 고립 연산)
+    const detectedMode = await analyzePromptMode(promptText, ""); // 히스토리는 필요 시 추가 확장
+    state.setCurrentMode(detectedMode);
     
     const newGroupId = `node-group-regen-${generateId()}`;
     const versionColor = targetVersion.color || INITIAL_GRAY;
 
     // [BUG FIX] DOM 네이티브 포커싱 유지 및 기존 선택 해제
     state.setNodes(state.nodes.map(n => ({ ...n, selected: false })));
+
+    // 2. 전략적 전문가 선발 (Group A: 최적, Group B/C: 시너지 Top 5 중 무작위)
+    const rankedData = RANKED_SQUAD_DATA[detectedMode];
+    
+    // Group A: Rank 1
+    const squadA = rankedData[0];
+    
+    // Group B, C: Rank 2~5 중 무작위 2팀
+    const top5Remaining = rankedData.slice(1, 5).sort(() => Math.random() - 0.5);
+    const squadB = top5Remaining[0];
+    const squadC = top5Remaining[1];
+
+    const squads = [squadA, squadB, squadC];
+    const groupIds = ['A', 'B', 'C'];
+
+    const parallelResults = groupIds.map((gid, idx) => ({
+      groupId: gid,
+      squadIds: squads[idx].ids,
+      synergyScore: squads[idx].score,
+      status: 'loading' as const,
+      mode: detectedMode,
+      data: {}
+    }));
 
     // Ghost Node 즉시 생성
     state.addNode({
@@ -641,11 +710,14 @@ export const useStore = create<AppState>((set, get) => ({
       data: {
         turn,
         versionColor,
+        isParallel: true,
+        parallelResults,
         loading: true,
-        thesis: { expertId: '', role: 'thesis', shortContent: '', fullContent: '', keywords: [] },
-        antithesis: { expertId: '', role: 'antithesis', shortContent: '', fullContent: '', keywords: [] },
-        synthesis: { expertId: '', role: 'synthesis', shortContent: '', fullContent: '', keywords: [] },
-        support: { expertId: '', role: 'support', shortContent: '', fullContent: '', keywords: [] },
+        // Root fallback values
+        thesis: { expertId: squads[0].ids[0], role: 'thesis', shortContent: '', fullContent: '', keywords: [] },
+        antithesis: { expertId: squads[0].ids[1], role: 'antithesis', shortContent: '', fullContent: '', keywords: [] },
+        synthesis: { expertId: squads[0].ids[2], role: 'synthesis', shortContent: '', fullContent: '', keywords: [] },
+        support: { expertId: squads[0].ids[3], role: 'support', shortContent: '', fullContent: '', keywords: [] },
       },
     } as any);
 
@@ -661,45 +733,62 @@ export const useStore = create<AppState>((set, get) => ({
     // [PLAN: Auto-Select New Node]
     state.setSelectedNodeId(newGroupId);
 
+    // 상태 업데이트 헬퍼
+    const updateParallelGroup = (index: number, partialData: any) => {
+      set((s) => ({
+        nodes: s.nodes.map(n => {
+          if (n.id === newGroupId && isTurnGroupNode(n)) {
+            const newParallel = [...(n.data.parallelResults || [])];
+            newParallel[index] = { ...newParallel[index], data: { ...newParallel[index].data, ...partialData } };
+            return { ...n, data: { ...n.data, parallelResults: newParallel } };
+          }
+          return n;
+        })
+      }));
+    };
+
+    const finishParallelGroup = (index: number, finalResult?: any) => {
+      set((s) => ({
+        nodes: s.nodes.map(n => {
+          if (n.id === newGroupId && isTurnGroupNode(n)) {
+             const newParallel = [...(n.data.parallelResults || [])];
+             newParallel[index] = { 
+               ...newParallel[index], 
+               status: finalResult ? 'complete' : 'error',
+               ...(finalResult ? { data: finalResult } : {})
+             };
+             const allComplete = newParallel.every(p => p.status === 'complete' || p.status === 'error');
+             return { ...n, data: { ...n.data, parallelResults: newParallel, loading: !allComplete } };
+          }
+          return n;
+        })
+      }));
+    };
+
     try {
-      if (isRootOrMemo) {
-        await generateDiscussion(
-          promptText,
-          state.currentMode || 'A',
-          EXPERTS.map(e => e.id),
-          {
-            onSquadSelected: (squad) => {
-              state.updateNodeData(newGroupId, { ...squad });
-            },
-            onStreamChunk: (partial) => {
-              state.updateNodeData(newGroupId, { ...partial });
-            }
-          },
-          imageData
-        ).then(fullResult => {
-          state.updateNodeData(newGroupId, { ...fullResult, loading: false });
-          state.setGenerationTurn(turn);
-        });
-      } else {
-        await regenerateDiscussion(
-          prevFinalOutput,
-          promptText,
-          state.currentMode,
-          EXPERTS.map(e => e.id),
-          {
-            onSquadSelected: (squad) => {
-              state.updateNodeData(newGroupId, { ...squad });
-            },
-            onStreamChunk: (partial) => {
-              state.updateNodeData(newGroupId, { ...partial });
-            }
-          },
-          imageData
-        ).then(fullResult => {
-          state.updateNodeData(newGroupId, { ...fullResult, loading: false });
-          state.setGenerationTurn(turn);
-        });
-      }
+      await Promise.all(groupIds.map(async (gid, index) => {
+        const currentSquad = squads[index];
+        const squadIds = currentSquad.ids;
+        try {
+          if (isRootOrMemo) {
+            const res = await generateDiscussion(promptText, detectedMode, squadIds, {
+              onSquadSelected: (squad) => updateParallelGroup(index, { ...squad }),
+              onStreamChunk: (partial) => updateParallelGroup(index, partial)
+            }, imageData);
+            finishParallelGroup(index, res);
+          } else {
+            const res = await regenerateDiscussion(prevFinalOutput, promptText, detectedMode, squadIds, {
+              onSquadSelected: (squad) => updateParallelGroup(index, { ...squad }),
+              onStreamChunk: (partial) => updateParallelGroup(index, partial)
+            }, imageData);
+            finishParallelGroup(index, res);
+          }
+        } catch (e) {
+          console.error(`Group ${gid} Error:`, e);
+          finishParallelGroup(index); // Mark error
+        }
+      }));
+      state.setGenerationTurn(turn);
     } catch (e) {
       console.error('Re-generate 실패:', e);
       state.deleteNode(newGroupId);

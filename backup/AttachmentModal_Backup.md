@@ -1,3 +1,10 @@
+# [BACKUP] AttachmentModal.tsx
+
+- **삭제 일자**: 2026-04-10
+- **삭제 요인**: Gemini AI Studio 스타일의 통합 이미지 업로드 UI 개편으로 인한 기능 통합
+- **기존 역할**: 별도의 모달창을 띄워 이미지 파일 선택 및 썸네일 미리보기 제공
+
+```tsx
 import { memo, useRef } from 'react';
 import { X, UploadCloud, FileImage, Trash2 } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -95,3 +102,4 @@ export const AttachmentModal = memo(({ isOpen, onClose, image, onImageChange }: 
     </div>
   );
 });
+```
